@@ -1,11 +1,10 @@
+google-generativeai>=0.7.0
 streamlit
-google-generativeai
 opencv-python-headless
 numpy
 pandas
 Pillow
 altair
-
 pydeck
 gspread
 oauth2client
