@@ -62,7 +62,7 @@ try:
     else:
         df_gastos = pd.DataFrame()
 except:
-    st.warning("No se pudo leer la base de datos. Verifica el nombre de la hoja.")
+    st.warning("No se pudo leer la base de datos. Verifica el nombre de la hoja en Drive.")
     df_gastos = pd.DataFrame()
 
 # Guardar en Session State para la UI
@@ -123,7 +123,9 @@ def analizar_ticket(imagen_pil):
         response = model.generate_content([prompt, imagen_pil])
         return response.text, nombre
     except Exception as e:
-        if "429" in str(e): return "CUOTA_EXCEDIDA: Espera un momento.", nombre
+        error_msg = str(e)
+        if "429" in error_msg: return "CUOTA_EXCEDIDA: Espera un momento.", nombre
+        if "API key not valid" in error_msg: return "ERROR_KEY: La llave es inválida o fue revocada.", nombre
         return f"Error API: {e}", nombre
 
 def consultar_chat_financiero(pregunta, datos_df):
@@ -177,7 +179,7 @@ st.markdown("---")
 
 tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Analytics", "💬 Asistente IA"])
 
-# --- TAB 1: CARGA ---
+# --- TAB 1: CARGA (CON DIAGNÓSTICO MEJORADO) ---
 with tab_nuevo:
     col_izq, col_der = st.columns([1, 1])
     with col_izq:
@@ -190,15 +192,25 @@ with tab_nuevo:
             if st.button("⚡ Procesar", type="primary"):
                 with st.spinner("Leyendo con IA..."):
                     txt, mod = analizar_ticket(img_proc)
-                    try:
-                        match = re.search(r'\{.*\}', txt, re.DOTALL)
-                        if match:
-                            clean_json = match.group()
-                            st.session_state['temp_data'] = json.loads(clean_json)
-                            st.toast("Datos extraídos", icon="✨")
-                        else:
-                            st.error("Error leyendo datos.")
-                    except: st.error("Error procesando respuesta.")
+                    
+                    # --- BLOQUE DE DIAGNÓSTICO ---
+                    if "Error" in txt or "CUOTA" in txt:
+                        st.error(f"🛑 Problema detectado: {txt}")
+                        if "KEY" in txt:
+                            st.info("💡 Consejo: Genera una nueva API Key en Google AI Studio y actualiza los Secrets.")
+                    else:
+                        try:
+                            match = re.search(r'\{.*\}', txt, re.DOTALL)
+                            if match:
+                                clean_json = match.group()
+                                st.session_state['temp_data'] = json.loads(clean_json)
+                                st.toast("Datos extraídos", icon="✨")
+                            else:
+                                st.error("⚠️ La IA no devolvió datos legibles.")
+                                with st.expander("Ver respuesta cruda (Debug)"):
+                                    st.code(txt)
+                        except Exception as e: 
+                            st.error(f"Error procesando JSON: {e}")
 
     with col_der:
         if 'temp_data' in st.session_state:
