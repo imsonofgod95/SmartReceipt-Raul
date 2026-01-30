@@ -7,18 +7,20 @@ import pandas as pd
 import json
 import os
 import altair as alt
+import pydeck as pdk
 import hashlib
+import time
 
 # =======================================================
 # 1. CONFIGURACIÓN
 # =======================================================
-st.set_page_config(page_title="SmartReceipt Cloud", layout="wide", page_icon="☁️")
+st.set_page_config(page_title="SmartReceipt Business", layout="wide", page_icon="🧾")
 
-if "GOOGLE_API_KEY" not in st.secrets:
-    st.error("⚠️ Falta GOOGLE_API_KEY en Secrets")
+try:
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+except:
+    st.error("❌ GOOGLE_API_KEY no configurada en Secrets")
     st.stop()
-
-genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 ARCHIVO_DB = "historial_gastos.csv"
 CACHE_FILE = "cache_ia.json"
@@ -27,13 +29,11 @@ CACHE_FILE = "cache_ia.json"
 # 2. CATÁLOGOS
 # =======================================================
 LISTA_CATEGORIAS = [
-    "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
-    "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)",
-    "Telefonía y Comunicaciones", "Ropa y Calzado", "Electrónica y Tecnología",
-    "Entretenimiento y Cine", "Educación y Libros", "Mascotas",
-    "Regalos y Detalles", "Viajes y Hoteles", "Suscripciones (Streaming)",
-    "Cuidado Personal y Belleza", "Deportes y Gimnasio", "Oficina y Trabajo",
-    "Mantenimiento Automotriz", "Varios"
+    "Alimentos y Supermercado", "Restaurantes y Bares",
+    "Gasolina y Transporte", "Salud y Farmacia",
+    "Hogar y Muebles", "Servicios",
+    "Ropa y Calzado", "Entretenimiento",
+    "Electrónica", "Viajes", "Varios"
 ]
 
 COMERCIOS_CANONICOS = {
@@ -44,14 +44,12 @@ COMERCIOS_CANONICOS = {
 }
 
 def normalizar_comercio(nombre):
-    if not nombre:
-        return ""
-    nombre = nombre.upper()
-    for canon, variantes in COMERCIOS_CANONICOS.items():
+    nombre = (nombre or "").upper()
+    for canonico, variantes in COMERCIOS_CANONICOS.items():
         for v in variantes:
             if v in nombre:
-                return canon
-    return nombre
+                return canonico
+    return nombre or "NO DETECTADO"
 
 # =======================================================
 # 3. CACHE IA
@@ -70,84 +68,66 @@ def guardar_cache(cache):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 # =======================================================
-# 4. BASE DE DATOS
+# 4. CARGA BD
 # =======================================================
 if "gastos" not in st.session_state:
     if os.path.exists(ARCHIVO_DB):
-        df = pd.read_csv(ARCHIVO_DB)
-        st.session_state["gastos"] = df.to_dict("records")
+        st.session_state["gastos"] = pd.read_csv(ARCHIVO_DB).to_dict("records")
     else:
         st.session_state["gastos"] = []
 
 # =======================================================
-# 5. VISIÓN COMPUTACIONAL (LIGERA)
+# 5. PREPROCESAMIENTO IMAGEN
 # =======================================================
-def procesar_imagen_opencv(imagen):
+def procesar_imagen(imagen):
     img = np.array(imagen)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    clahe = cv2.createCLAHE(2.0, (8, 8))
-    img = clahe.apply(img)
-    return Image.fromarray(img)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    clahe = cv2.createCLAHE(2.0, (8,8))
+    enhanced = clahe.apply(gray)
+    return Image.fromarray(enhanced)
 
 # =======================================================
-# 6. MODELO IA ROBUSTO
+# 6. IA ROBUSTA CON FALLBACK
 # =======================================================
-def obtener_modelo_valido():
-    try:
-        modelos = [
-            m.name for m in genai.list_models()
-            if "generateContent" in m.supported_generation_methods
-        ]
-        for m in modelos:
-            if "gemini-1.5-flash" in m:
-                return m
-        return modelos[0]
-    except:
-        return "gemini-1.5-flash"
+def obtener_modelo():
+    return "gemini-1.5-flash"
 
 def analizar_ticket(imagen):
-    modelo = obtener_modelo_valido()
-    model = genai.GenerativeModel(modelo)
-    categorias = ", ".join(LISTA_CATEGORIAS)
+    model = genai.GenerativeModel(obtener_modelo())
 
-    prompt = f"""
-Analiza este ticket.
+    prompt = """
+Analiza este ticket REAL.
 
 REGLAS:
-- No inventes datos
-- Si no existe, usa null
+- NO inventes
+- Si no existe → null
 - Fecha DD/MM/AAAA
 - Total = monto final pagado
 
-Categorías válidas: [{categorias}]
-
 Devuelve SOLO JSON:
 
-{{
-  "comercio": "",
-  "total": null,
-  "fecha": null,
-  "ubicacion": null,
-  "latitud": null,
-  "longitud": null,
-  "categoria": "",
-  "detalles": ""
-}}
+{
+ "comercio": null,
+ "total": null,
+ "fecha": null,
+ "ubicacion": null,
+ "latitud": null,
+ "longitud": null,
+ "categoria": null,
+ "detalles": null
+}
 """
 
     try:
         response = model.generate_content([prompt, imagen])
-        return response.text
+        texto = response.text.replace("```json","").replace("```","").strip()
+        texto = texto[texto.find("{"):texto.rfind("}")+1]
+        return json.loads(texto)
 
     except Exception as e:
-        error = str(e)
-
-        if "ResourceExhausted" in error:
-            st.warning("⚠️ Cuota de IA agotada. Usando fallback.")
-        else:
-            st.error("❌ Error IA. Usando fallback seguro.")
-
-        return json.dumps({
+        # 🔐 FALLBACK SEGURO
+        st.warning("⚠️ Error IA. Usando fallback seguro.")
+        return {
             "comercio": None,
             "total": None,
             "fecha": None,
@@ -155,64 +135,59 @@ Devuelve SOLO JSON:
             "latitud": None,
             "longitud": None,
             "categoria": "Varios",
-            "detalles": "Fallback IA"
-        })
+            "detalles": None
+        }
 
 # =======================================================
 # 7. UI
 # =======================================================
-st.title("🧠 SmartReceipt – Business Ready")
+st.title("🧠 SmartReceipt – Business Hardened")
 
 tab1, tab2 = st.tabs(["📸 Nuevo Ticket", "📊 Dashboard"])
 
-# -------------------------------------------------------
-# TAB 1
-# -------------------------------------------------------
+# ---------------- TAB 1 ----------------
 with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
-        archivo = st.file_uploader("Sube tu ticket", type=["jpg", "png", "jpeg"])
-
+        archivo = st.file_uploader("Sube tu ticket", ["jpg","png","jpeg"])
         if archivo:
-            img_original = Image.open(archivo).convert("RGB")
-            img_proc = procesar_imagen_opencv(img_original)
-            st.image(img_proc, caption="Procesada", use_container_width=True)
+            img = Image.open(archivo)
+            img_proc = procesar_imagen(img)
+            st.image(img_proc, use_container_width=True)
 
-            if st.button("🧠 Escanear"):
+            if st.button("🧠 Analizar"):
                 cache = cargar_cache()
                 h = hash_imagen(img_proc)
 
                 if h in cache:
-                    st.session_state["temp"] = cache[h]
-                    st.toast("⚡ Desde caché")
+                    data = cache[h]
+                    st.toast("Leído desde caché ⚡")
                 else:
-                    with st.spinner("Analizando..."):
-                        raw = analizar_ticket(img_proc)
-                        clean = raw.replace("```json", "").replace("```", "").strip()
-                        clean = clean[clean.find("{"):clean.rfind("}") + 1]
-                        data = json.loads(clean)
-
+                    with st.spinner("Analizando con IA..."):
+                        data = analizar_ticket(img_proc)
                         cache[h] = data
                         guardar_cache(cache)
-                        st.session_state["temp"] = data
+                        time.sleep(1)
+
+                st.session_state["temp"] = data
 
     with col2:
         if "temp" in st.session_state:
             d = st.session_state["temp"]
 
             comercio = normalizar_comercio(d.get("comercio"))
-            monto = float(d.get("total") or 0)
+            monto = d.get("total") or 0.0
             fecha = d.get("fecha") or pd.Timestamp.today().strftime("%d/%m/%Y")
             ubicacion = d.get("ubicacion") or comercio
 
             with st.form("guardar"):
                 comercio = st.text_input("Comercio", comercio)
-                monto = st.number_input("Monto", value=monto)
+                monto = st.number_input("Monto", value=float(monto))
                 fecha = st.text_input("Fecha", fecha)
                 categoria = st.selectbox("Categoría", LISTA_CATEGORIAS)
                 ubicacion = st.text_input("Ubicación", ubicacion)
-                detalles = st.text_input("Detalles", d.get("detalles", ""))
+                detalles = st.text_input("Detalles", d.get("detalles") or "")
 
                 if st.form_submit_button("💾 Guardar"):
                     st.session_state["gastos"].append({
@@ -225,24 +200,25 @@ with tab1:
                     })
                     pd.DataFrame(st.session_state["gastos"]).to_csv(ARCHIVO_DB, index=False)
                     del st.session_state["temp"]
-                    st.success("Guardado ✔")
+                    st.success("✅ Guardado")
                     st.rerun()
 
-# -------------------------------------------------------
-# TAB 2
-# -------------------------------------------------------
+# ---------------- TAB 2 ----------------
 with tab2:
     if st.session_state["gastos"]:
         df = pd.DataFrame(st.session_state["gastos"])
         st.metric("💰 Total", f"${df['Monto'].sum():,.2f}")
         st.metric("🧾 Tickets", len(df))
+
         st.altair_chart(
-            alt.Chart(df).mark_arc(innerRadius=50).encode(
-                theta="Monto", color="Categoría"
+            alt.Chart(df).mark_arc(innerRadius=40).encode(
+                theta="Monto",
+                color="Categoría"
             ),
             use_container_width=True
         )
+
         st.dataframe(df, use_container_width=True)
     else:
-        st.info("Sin datos aún")
+        st.info("Aún no hay tickets")
 
