@@ -1,0 +1,8 @@
+streamlit
+google-generativeai
+opencv-python-headless
+numpy
+pandas
+Pillow
+altair
+pydeck
