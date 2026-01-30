@@ -13,67 +13,96 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 # =======================================================
-# 1. CONFIGURACIÓN SEGURA & CONEXIÓN A SHEETS ☁️
+# 1. CONFIGURACIÓN Y LOGIN (SEGURIDAD PRIMERO) 🔐
 # =======================================================
-st.set_page_config(page_title="SmartReceipt Pro", layout="wide", page_icon="📈")
+st.set_page_config(page_title="SmartReceipt Pro", layout="wide", page_icon="💳")
+
+# --- SISTEMA DE LOGIN ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+def login():
+    st.markdown("""
+        <style>
+            .stTextInput > div > div > input {text-align: center;} 
+        </style>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.title("🔐 Acceso Corporativo")
+        st.caption("Sistema Inteligente de Gestión de Gastos")
+        
+        usuario = st.text_input("Usuario")
+        contra = st.text_input("Contraseña", type="password")
+        
+        if st.button("Iniciar Sesión", type="primary", use_container_width=True):
+            # Verificar contra la base de datos de secretos
+            if "usuarios" in st.secrets and usuario in st.secrets["usuarios"]:
+                if st.secrets["usuarios"][usuario] == contra:
+                    st.session_state.logged_in = True
+                    st.toast(f"Bienvenido, {usuario}", icon="👋")
+                    st.rerun()
+                else:
+                    st.error("Contraseña incorrecta")
+            else:
+                st.error("Usuario no encontrado")
+
+if not st.session_state.logged_in:
+    login()
+    st.stop()  # 🛑 AQUÍ SE DETIENE TODO SI NO ESTÁS LOGUEADO
+
+# =======================================================
+# 2. CARGA DE RECURSOS (SOLO SI LOGUEADO)
+# =======================================================
 
 # A) Configurar Gemini (IA)
 try:
     if "GOOGLE_API_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     else:
-        st.error("⚠️ Falta GOOGLE_API_KEY en Secrets.")
+        st.error("⚠️ Error interno: Falta API Key.")
         st.stop()
 except Exception as e:
-    st.error(f"Error config Gemini: {e}")
+    st.error(f"Error conexión IA: {e}")
     st.stop()
 
-# B) Configurar Google Sheets (Base de Datos)
+# B) Configurar Google Sheets
 def conectar_google_sheets():
-    """Conecta a la hoja de cálculo usando las credenciales de Secrets"""
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
-        # Leemos las credenciales desde [gcp_service_account] en Secrets
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
-            
-            # Arreglar el formato de la private_key si es necesario
             if "private_key" in creds_dict:
                 creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             client = gspread.authorize(creds)
-            
-            # Abrimos la hoja por su nombre exacto
             sheet = client.open("SmartReceipt DB").sheet1
             return sheet
-        else:
-            return None
+        return None
     except Exception as e:
-        st.error(f"❌ Error conectando a Google Sheets: {e}")
+        st.error(f"Error Base de Datos: {e}")
         return None
 
-# Cargar datos al inicio
+# Cargar datos
 try:
     hoja_db = conectar_google_sheets()
     if hoja_db:
         raw_data = hoja_db.get_all_records()
         df_gastos = pd.DataFrame(raw_data)
-        
-        # Si la hoja está vacía (solo headers), creamos un DF vacío con columnas correctas
         if df_gastos.empty:
             df_gastos = pd.DataFrame(columns=["Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"])
     else:
         df_gastos = pd.DataFrame()
 except:
-    # st.warning("Modo Offline: No se pudo conectar a Sheets.")
     df_gastos = pd.DataFrame()
 
-# Guardar en Session State para la UI
 if 'gastos' not in st.session_state:
     st.session_state['gastos'] = df_gastos.to_dict('records')
+if 'chat_history' not in st.session_state:
+    st.session_state['chat_history'] = []
 
-# LISTA MAESTRA DE CATEGORÍAS
 LISTA_CATEGORIAS = [
     "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
     "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)",
@@ -84,11 +113,8 @@ LISTA_CATEGORIAS = [
     "Mantenimiento Automotriz", "Varios"
 ]
 
-if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = []
-
 # =======================================================
-# 2. MÓDULO DE VISIÓN
+# 3. FUNCIONES CORE
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
     img_np = np.array(imagen_pil)
@@ -101,34 +127,13 @@ def procesar_imagen_opencv(imagen_pil):
     enhanced = clahe.apply(gray)
     return Image.fromarray(enhanced)
 
-# =======================================================
-# 3. CONEXIÓN IA (DINÁMICA - BUSCA EL MODELO DISPONIBLE)
-# =======================================================
 def obtener_modelo_valido():
-    """
-    Busca dinámicamente qué modelos tiene habilitados la API Key
-    y selecciona el mejor disponible (Flash > Pro > Cualquiera).
-    """
     try:
-        # Obtenemos lista real de modelos disponibles para tu cuenta
         modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 1. Buscar Flash 1.5 (Prioridad)
         for m in modelos:
             if 'flash' in m and '1.5' in m: return m
-        
-        # 2. Buscar Pro 1.5
-        for m in modelos:
-            if 'pro' in m and '1.5' in m: return m
-            
-        # 3. Fallback: Pro 1.0 o el primero que encuentre
-        for m in modelos:
-            if 'pro' in m: return m
-            
         return modelos[0] if modelos else "gemini-1.5-flash"
-    except Exception as e:
-        # Si falla el listado, intentamos el default ciegamente
-        return "gemini-1.5-flash"
+    except: return "gemini-1.5-flash"
 
 def analizar_ticket(imagen_pil):
     nombre_modelo = obtener_modelo_valido()
@@ -150,11 +155,7 @@ def analizar_ticket(imagen_pil):
         response = model.generate_content([prompt, imagen_pil])
         return response.text, nombre_modelo
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg: return "CUOTA_EXCEDIDA: Espera un momento.", nombre_modelo
-        if "404" in error_msg: return f"ERROR_MODELO: No se encontró el modelo {nombre_modelo}. Actualiza requirements.txt", nombre_modelo
-        if "API key" in error_msg: return "ERROR_KEY: Llave inválida.", nombre_modelo
-        return f"Error Técnico: {e}", nombre_modelo
+        return f"Error API: {e}", nombre_modelo
 
 def consultar_chat_financiero(pregunta, datos_df):
     nombre = obtener_modelo_valido()
@@ -174,19 +175,26 @@ def consultar_chat_financiero(pregunta, datos_df):
         return f"Error Chat: {e}"
 
 # =======================================================
-# 4. DASHBOARD & FILTROS
+# 4. INTERFAZ DE USUARIO (DASHBOARD)
 # =======================================================
-st.sidebar.header("🔍 Filtros")
+# Sidebar con botón de Salir
+with st.sidebar:
+    st.header(f"👤 {st.session_state.get('username', 'Usuario')}")
+    if st.button("Cerrar Sesión", type="secondary"):
+        st.session_state.logged_in = False
+        st.rerun()
+    st.divider()
+    st.header("🔍 Filtros")
+
+# Preparar datos
 df = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
 
 if not df.empty:
-    # Asegurar tipos numéricos para evitar errores
     if 'lat' in df.columns: df['lat'] = pd.to_numeric(df['lat'], errors='coerce').fillna(0.0)
     if 'lon' in df.columns: df['lon'] = pd.to_numeric(df['lon'], errors='coerce').fillna(0.0)
     if 'Monto' in df.columns: df['Monto'] = pd.to_numeric(df['Monto'], errors='coerce').fillna(0.0)
 
-    # Filtros
     cat_opts = sorted(df['Categoría'].astype(str).unique()) if 'Categoría' in df.columns else []
     com_opts = sorted(df['Comercio'].astype(str).unique()) if 'Comercio' in df.columns else []
     
@@ -196,18 +204,12 @@ if not df.empty:
     mask_cat = df['Categoría'].isin(sel_cat) if 'Categoría' in df.columns else True
     mask_com = df['Comercio'].isin(sel_com) if 'Comercio' in df.columns else True
     df_filtrado = df[mask_cat & mask_com]
-else:
-    st.sidebar.info("Base de datos vacía. Sube tu primer ticket.")
 
-# =======================================================
-# 5. UI PRINCIPAL
-# =======================================================
+# TABS PRINCIPALES
 st.title("💳 SmartReceipt: Business Cloud")
-st.markdown("---")
-
 tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Analytics", "💬 Asistente IA"])
 
-# --- TAB 1: CARGA (CON DIAGNÓSTICO MEJORADO) ---
+# --- TAB 1: CARGA ---
 with tab_nuevo:
     col_izq, col_der = st.columns([1, 1])
     with col_izq:
@@ -220,31 +222,21 @@ with tab_nuevo:
             if st.button("⚡ Procesar", type="primary"):
                 with st.spinner("Conectando con Google AI..."):
                     txt, mod = analizar_ticket(img_proc)
-                    
-                    # --- BLOQUE DE DIAGNÓSTICO ---
-                    if "Error" in txt or "CUOTA" in txt or "ERROR" in txt:
-                        st.error(f"🛑 {txt}")
-                        if "404" in txt:
-                            st.info("💡 Solución: Ve a tu archivo 'requirements.txt' en GitHub y cambia 'google-generativeai' por 'google-generativeai>=0.7.0'")
-                    else:
-                        try:
-                            match = re.search(r'\{.*\}', txt, re.DOTALL)
-                            if match:
-                                clean_json = match.group()
-                                st.session_state['temp_data'] = json.loads(clean_json)
-                                st.toast(f"Leído con {mod}", icon="✨")
-                            else:
-                                st.error("⚠️ La IA no devolvió datos legibles.")
-                                with st.expander("Ver respuesta cruda (Debug)"):
-                                    st.code(txt)
-                        except Exception as e: 
-                            st.error(f"Error procesando JSON: {e}")
+                    try:
+                        match = re.search(r'\{.*\}', txt, re.DOTALL)
+                        if match:
+                            clean_json = match.group()
+                            st.session_state['temp_data'] = json.loads(clean_json)
+                            st.toast(f"Leído con {mod}", icon="✨")
+                        else:
+                            st.error(f"Error IA: {txt}")
+                    except: st.error("Error procesando respuesta.")
 
     with col_der:
         if 'temp_data' in st.session_state:
             data = st.session_state['temp_data']
             with st.form("form_save"):
-                st.subheader("Confirmar y Guardar en Nube")
+                st.subheader("Guardar en Nube")
                 c1, c2 = st.columns(2)
                 vc = c1.text_input("Comercio", data.get("comercio",""))
                 monto_raw = str(data.get("total",0)).replace("$","").replace(",","")
@@ -264,17 +256,13 @@ with tab_nuevo:
                 vlon = c7.number_input("Lon", value=float(data.get("longitud", 0.0)), format="%.4f")
                 vdet = st.text_input("Detalles", data.get("detalles",""))
                 
-                if st.form_submit_button("☁️ Guardar en Google Sheets"):
-                    with st.spinner("Guardando en la nube..."):
-                        # Preparar fila para Sheets
+                if st.form_submit_button("☁️ Guardar"):
+                    with st.spinner("Sincronizando..."):
                         nueva_fila = [vf, vc, vm_in, vu, vlat, vlon, vcat, vdet]
-                        
-                        # Guardar en Sheets
                         if hoja_db:
                             try:
                                 hoja_db.append_row(nueva_fila)
-                                st.success("¡Guardado en Drive!")
-                                # Actualizar estado local para que se vea inmediato
+                                st.success("¡Guardado!")
                                 st.session_state['gastos'].append({
                                     "Fecha": vf, "Comercio": vc, "Monto": vm_in, 
                                     "Ubicación": vu, "lat": vlat, "lon": vlon,
@@ -283,9 +271,9 @@ with tab_nuevo:
                                 del st.session_state['temp_data']
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Error escribiendo en Sheets: {e}")
+                                st.error(f"Error Sheets: {e}")
                         else:
-                            st.error("No hay conexión con la base de datos.")
+                            st.error("Sin conexión a DB.")
 
 # --- TAB 2: DASHBOARD ---
 with tab_dashboard:
@@ -303,7 +291,6 @@ with tab_dashboard:
                 layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[255, 75, 75, 200]', get_radius=200, pickable=True)],
                 tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
             ))
-        else: st.info("Sube tickets con ubicación para ver mapa.")
         
         g1, g2 = st.columns(2)
         with g1:
@@ -315,24 +302,24 @@ with tab_dashboard:
             if not df_chart.empty:
                 st.altair_chart(alt.Chart(df_chart).mark_line(point=True).encode(x=alt.X('Fecha_dt', title='Fecha'), y='Monto', tooltip=['Fecha', 'Monto']), use_container_width=True)
 
-        with st.expander("📂 Ver Base de Datos en Vivo (Google Sheets)"):
+        with st.expander("📂 Base de Datos en Vivo"):
             st.dataframe(df_filtrado, use_container_width=True)
-            if st.button("🔄 Recargar Datos de la Nube"):
+            if st.button("🔄 Actualizar"):
                 st.cache_data.clear()
                 st.rerun()
 
 # --- TAB 3: CHAT ---
 with tab_chat:
-    st.header("💬 Analista Financiero")
+    st.header("💬 Analista IA")
     for m in st.session_state['chat_history']:
         with st.chat_message(m["role"]): st.markdown(m["content"])
     q = st.chat_input("Pregunta...")
     if q:
         with st.chat_message("user"): st.markdown(q)
         st.session_state['chat_history'].append({"role": "user", "content": q})
-        if df_filtrado.empty: r = "Sube tickets primero."
+        if df_filtrado.empty: r = "Sin datos aún."
         else:
-            with st.spinner("Analizando..."):
+            with st.spinner("Pensando..."):
                 r = consultar_chat_financiero(q, pd.DataFrame(st.session_state['gastos']))
         with st.chat_message("assistant"): st.markdown(r)
         st.session_state['chat_history'].append({"role": "assistant", "content": r})
