@@ -98,7 +98,7 @@ def analizar_ticket(imagen_pil):
         model = genai.GenerativeModel(nombre)
         cats_str = ", ".join(LISTA_CATEGORIAS)
         prompt = f"""
-        Analiza imagen. Extrae JSON EXCLUSIVO.
+        Analiza imagen. Extrae JSON EXCLUSIVO. NO incluyas formato markdown.
         INSTRUCCIONES UBICACIÓN: Ignora dirección fiscal. Busca SUCURSAL física y estima GPS.
         INSTRUCCIONES CATEGORÍA: Clasifica en una de: [{cats_str}]
         
@@ -193,12 +193,19 @@ with tab_nuevo:
             if st.button("🧠 Escanear", type="primary"):
                 with st.spinner("Analizando..."):
                     txt, mod = analizar_ticket(img_proc)
-                    clean = txt.replace("```json", "").replace("```", "").strip()
-                    if "{" in clean: clean = clean[clean.find("{"):clean.rfind("}")+1]
+                    
+                    # AJUSTE ROBUSTO PARA ERROR DE LECTURA
                     try:
-                        st.session_state['temp_data'] = json.loads(clean)
-                        st.toast("Leído", icon="📍")
-                    except: st.error("Error lectura")
+                        # Extraer solo el JSON usando Regex por si la IA agrega texto extra
+                        match = re.search(r'\{.*\}', txt, re.DOTALL)
+                        if match:
+                            clean_json = match.group()
+                            st.session_state['temp_data'] = json.loads(clean_json)
+                            st.toast("Leído", icon="📍")
+                        else:
+                            st.error("No se detectó un formato JSON válido.")
+                    except: 
+                        st.error("Error al decodificar la respuesta de la IA.")
 
     with col_der:
         if 'temp_data' in st.session_state:
@@ -207,7 +214,13 @@ with tab_nuevo:
                 st.subheader("Validar")
                 c1, c2 = st.columns(2)
                 vc = c1.text_input("Comercio", data.get("comercio",""))
-                vm = c2.number_input("Total", value=float(str(data.get("total",0)).replace("$","").replace(",","")) if data.get("total") else 0.0)
+                
+                # Limpieza de monto previa al número
+                monto_raw = str(data.get("total",0)).replace("$","").replace(",","")
+                try: vm_f = float(monto_raw)
+                except: vm_f = 0.0
+                
+                vm = c2.number_input("Total", value=vm_f)
                 
                 c3, c4 = st.columns(2)
                 vf = c3.text_input("Fecha", data.get("fecha","Hoy"))
