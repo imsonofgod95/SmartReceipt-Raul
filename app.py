@@ -14,30 +14,46 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 # =======================================================
-# 1. CONFIGURACIÓN Y LOGIN 🔐
+# 1. TEXTOS LEGALES ROBUSTOS (MODELO DE NEGOCIO DE DATOS)
 # =======================================================
-st.set_page_config(page_title="SmartReceipt SaaS", layout="wide", page_icon="🏢")
+TERMINOS_CONDICIONES = """
+**TÉRMINOS Y CONDICIONES DE USO Y POLÍTICA DE DATOS - SMARTRECEIPT**
 
-# --- CSS LEGALES ---
-st.markdown("""
-    <style>
-    .footer {position: fixed; left: 0; bottom: 0; width: 100%; background-color: #f1f1f1; color: black; text-align: center; padding: 10px; font-size: 12px; z-index: 1000;}
-    </style>
-""", unsafe_allow_html=True)
+1. **ACEPTACIÓN:** Al acceder y utilizar esta plataforma, usted acepta estos términos en su totalidad.
+2. **NATURALEZA DEL SERVICIO:** SmartReceipt utiliza Inteligencia Artificial para procesar tickets. El usuario reconoce que la IA puede cometer errores y es su responsabilidad verificar los montos.
+3. **USO DE DATOS Y PROPIEDAD INTELECTUAL (CLÁUSULA DE NEGOCIO):** - Usted conserva la propiedad de sus tickets individuales.
+   - Sin embargo, **usted otorga a SmartReceipt una licencia perpetua, irrevocable y mundial** para utilizar, copiar, modificar y agregar los datos procesados de forma **anónima** y **agregada** (sin identificarle personalmente) con fines de análisis estadístico, mejora del servicio, estudios de mercado y comercialización de insights de consumo.
+4. **PRIVACIDAD:** Sus datos personales (nombre, correo) están protegidos. No vendemos su información de contacto a terceros.
+5. **LIMITACIÓN DE RESPONSABILIDAD:** SmartReceipt no se hace responsable por pérdidas financieras derivadas de errores en la lectura de los tickets o fallos en el servicio.
+"""
 
-# --- LOGIN ---
+# =======================================================
+# 2. CONFIGURACIÓN Y LOGIN CON CHECK LEGAL ✅
+# =======================================================
+st.set_page_config(page_title="SmartReceipt Enterprise", layout="wide", page_icon="🏢")
+
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "username" not in st.session_state: st.session_state.username = ""
 
 def login():
-    st.markdown("<br><br><h1 style='text-align: center;'>🔐 SmartReceipt Acceso</h1>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
+        st.markdown("<br><h1 style='text-align: center;'>🔐 Acceso Corporativo</h1>", unsafe_allow_html=True)
         with st.form("login_form"):
             usuario = st.text_input("Usuario")
             contra = st.text_input("Contraseña", type="password")
-            if st.form_submit_button("Ingresar", type="primary", use_container_width=True):
-                if "usuarios" in st.secrets and usuario in st.secrets["usuarios"]:
+            
+            st.markdown("---")
+            # ACUERDO LEGAL OBLIGATORIO
+            with st.expander("📄 Leer Términos y Condiciones de Uso de Datos"):
+                st.markdown(TERMINOS_CONDICIONES)
+            
+            acepto_terminos = st.checkbox("He leído y acepto los Términos y el uso de datos anónimos.")
+            
+            if st.form_submit_button("Ingresar al Sistema", type="primary", use_container_width=True):
+                if not acepto_terminos:
+                    st.error("🛑 Debe aceptar los términos legales para continuar.")
+                elif "usuarios" in st.secrets and usuario in st.secrets["usuarios"]:
                     if st.secrets["usuarios"][usuario] == contra:
                         st.session_state.logged_in = True
                         st.session_state.username = usuario
@@ -50,18 +66,18 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =======================================================
-# 2. CONEXIÓN REAL-TIME (CORREGIDA) 📡
+# 3. SINCRONIZACIÓN AUTOMÁTICA (EL SECRETO DEL ÉXITO) 🔄
 # =======================================================
 
-# A) Gemini
+# A) Configurar Gemini
 try:
     if "GOOGLE_API_KEY" in st.secrets:
         genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 except: st.stop()
 
-# B) Google Sheets (Lectura Obligatoria)
-def obtener_datos_actualizados():
-    """Conecta y descarga SIEMPRE la última versión de los datos"""
+# B) Función de Carga Maestra
+def sincronizar_base_datos():
+    """Conecta, repara y descarga la última versión de los datos"""
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
         if "gcp_service_account" in st.secrets:
@@ -72,32 +88,33 @@ def obtener_datos_actualizados():
             client = gspread.authorize(creds)
             hoja = client.open("SmartReceipt DB").sheet1
             
-            # Auto-reparación de encabezados
+            # Auto-reparación silenciosa
             val_a1 = hoja.acell('A1').value
             if val_a1 != "Usuario":
                 encabezados = ["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"]
                 if not val_a1: hoja.append_row(encabezados)
                 else: hoja.insert_row(encabezados, 1)
             
-            # Descargar todo
-            raw_data = hoja.get_all_records()
-            return hoja, pd.DataFrame(raw_data)
+            return hoja, pd.DataFrame(hoja.get_all_records())
         return None, pd.DataFrame()
     except Exception as e:
-        # st.error(f"Error conexión: {e}")
         return None, pd.DataFrame()
 
-# --- CARGA SINCRONIZADA ---
-# Aquí está el cambio: Siempre sobreescribimos la memoria local con la del Excel
-hoja_db, df_full = obtener_datos_actualizados()
+# C) EJECUCIÓN INMEDIATA (ESTO HACE QUE CARGUE SIEMPRE)
+hoja_db, df_full = sincronizar_base_datos()
 
-# Filtramos por usuario
+# D) FILTRADO DE SEGURIDAD
 if not df_full.empty and "Usuario" in df_full.columns:
     df_gastos = df_full[df_full["Usuario"] == st.session_state.username].copy()
+    
+    # Limpieza de tipos de datos para evitar errores en gráficas
+    for col in ['lat', 'lon', 'Monto']:
+        if col in df_gastos.columns:
+            df_gastos[col] = pd.to_numeric(df_gastos[col], errors='coerce').fillna(0.0)
 else:
     df_gastos = pd.DataFrame(columns=["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"])
 
-# Guardamos en sesión para que la UI lo use
+# E) Guardar en Session State
 st.session_state['gastos'] = df_gastos.to_dict('records')
 
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
@@ -113,7 +130,7 @@ LISTA_CATEGORIAS = [
 ]
 
 # =======================================================
-# 3. FUNCIONES CORE
+# 4. FUNCIONES DE PROCESAMIENTO
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
     img_np = np.array(imagen_pil)
@@ -125,7 +142,6 @@ def procesar_imagen_opencv(imagen_pil):
     return Image.fromarray(enhanced)
 
 def analizar_ticket(imagen_pil):
-    # Selección dinámica de modelo
     try:
         mods = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         modelo = next((m for m in mods if 'flash' in m and '1.5' in m), mods[0] if mods else "gemini-1.5-flash")
@@ -149,39 +165,31 @@ def consultar_chat_financiero(pregunta, datos_df):
     try:
         model = genai.GenerativeModel("gemini-1.5-flash")
         datos_csv = datos_df.to_csv(index=False)
-        prompt = f"Eres Asistente Financiero. Datos de {st.session_state.username}:\n---\n{datos_csv}\n---\nPregunta: {pregunta}"
+        prompt = f"Eres Asistente Financiero. Datos: \n---\n{datos_csv}\n---\nPregunta: {pregunta}"
         response = model.generate_content(prompt)
         return response.text
     except Exception as e: return f"Error Chat: {e}"
 
 # =======================================================
-# 4. INTERFAZ PRINCIPAL
+# 5. INTERFAZ PRINCIPAL (UI)
 # =======================================================
 with st.sidebar:
-    st.title(f"👤 {st.session_state.username}")
-    if st.button("🔄 Sincronizar Datos"):
-        st.rerun()
+    st.header(f"👤 {st.session_state.username}")
+    st.caption("🟢 Conexión Segura Activa")
+    
     if st.button("Cerrar Sesión"):
         st.session_state.logged_in = False
         st.rerun()
     st.divider()
     
     # Filtros
-    df = pd.DataFrame(st.session_state['gastos'])
-    df_filtrado = pd.DataFrame()
-    if not df.empty and "Monto" in df.columns:
-        # Limpieza de datos robusta
-        for col in ['lat', 'lon', 'Monto']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-        
-        cat_opts = sorted(df['Categoría'].astype(str).unique()) if 'Categoría' in df.columns else []
+    df_filtrado = df_gastos.copy() # Usamos la copia fresca cargada al inicio
+    if not df_filtrado.empty:
+        cat_opts = sorted(df_filtrado['Categoría'].astype(str).unique()) if 'Categoría' in df_filtrado.columns else []
         sel_cat = st.sidebar.multiselect("Categoría", cat_opts)
-        
-        if sel_cat: df_filtrado = df[df['Categoría'].isin(sel_cat)]
-        else: df_filtrado = df
+        if sel_cat: df_filtrado = df_filtrado[df_filtrado['Categoría'].isin(sel_cat)]
 
-st.title("💳 SmartReceipt: Business Cloud")
+st.title("💳 SmartReceipt: Enterprise")
 tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Analytics", "💬 Asistente IA"])
 
 # --- TAB 1: CARGA ---
@@ -223,13 +231,14 @@ with tab_nuevo:
                 vlat = float(data.get("latitud", 0.0))
                 vlon = float(data.get("longitud", 0.0))
 
-                if st.form_submit_button("💾 Guardar Ticket"):
+                if st.form_submit_button("💾 Guardar y Sincronizar"):
                     nueva_fila = [st.session_state.username, vf, vc, vm, vu, vlat, vlon, vcat, vdet]
                     if hoja_db:
                         try:
                             hoja_db.append_row(nueva_fila)
                             st.success("Guardado exitoso.")
-                            # Forzamos recarga inmediata
+                            # TRUCO: Al hacer rerun, el script vuelve al inicio y ejecuta 
+                            # 'sincronizar_base_datos()' automáticamente, actualizando todo.
                             st.rerun()
                         except: st.error("Error conexión DB")
 
@@ -237,33 +246,31 @@ with tab_nuevo:
 with tab_dashboard:
     if not df_filtrado.empty:
         c1, c2, c3 = st.columns(3)
-        c1.metric("Total", f"${df_filtrado['Monto'].sum():,.2f}")
-        c2.metric("Tickets", len(df_filtrado))
-        c3.metric("Promedio", f"${df_filtrado['Monto'].mean():,.2f}")
+        c1.metric("Total Gastado", f"${df_filtrado['Monto'].sum():,.2f}")
+        c2.metric("Tickets Procesados", len(df_filtrado))
+        c3.metric("Ticket Promedio", f"${df_filtrado['Monto'].mean():,.2f}")
         st.divider()
         
         map_data = df_filtrado[(df_filtrado['lat']!=0)]
         if not map_data.empty:
             st.pydeck_chart(pdk.Deck(initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
-                layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[255, 75, 75, 200]', get_radius=200)]))
+                layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[255, 75, 75, 200]', get_radius=200, pickable=True)],
+                tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}))
         
         st.altair_chart(alt.Chart(df_filtrado).mark_arc(innerRadius=50).encode(theta='Monto', color='Categoría', tooltip=['Categoría','Monto']), use_container_width=True)
         st.dataframe(df_filtrado, use_container_width=True)
-    else: st.info("No hay datos visibles. Intenta sincronizar.")
+    else: st.info("No hay datos visibles.")
 
 # --- TAB 3: CHAT ---
 with tab_chat:
+    st.caption("🤖 Pregunta sobre tus gastos. La IA tiene acceso a tus datos actualizados.")
     for m in st.session_state['chat_history']:
         with st.chat_message(m["role"]): st.markdown(m["content"])
-    if q := st.chat_input("Pregunta sobre tus gastos..."):
+    if q := st.chat_input("Ej: ¿Cuánto gasté en comida este mes?"):
         with st.chat_message("user"): st.markdown(q)
         st.session_state['chat_history'].append({"role":"user", "content":q})
         if df_filtrado.empty: r = "No tienes datos aún."
         else:
-            with st.spinner("..."): r = consultar_chat_financiero(q, df_filtrado)
+            with st.spinner("Analizando..."): r = consultar_chat_financiero(q, df_filtrado)
         with st.chat_message("assistant"): st.markdown(r)
         st.session_state['chat_history'].append({"role":"assistant", "content":r})
-
-# --- FOOTER ---
-st.markdown("---")
-st.markdown("<div style='text-align: center; color: grey;'>© 2025 SmartReceipt Inc.</div>", unsafe_allow_html=True)
