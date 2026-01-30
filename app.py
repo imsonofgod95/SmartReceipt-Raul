@@ -34,17 +34,21 @@ def conectar_google_sheets():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
         # Leemos las credenciales desde [gcp_service_account] en Secrets
-        creds_dict = dict(st.secrets["gcp_service_account"])
-        
-        # Arreglar el formato de la private_key si es necesario (reemplazar \\n por \n real)
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        client = gspread.authorize(creds)
-        
-        # Abrimos la hoja por su nombre exacto
-        sheet = client.open("SmartReceipt DB").sheet1
-        return sheet
+        if "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            
+            # Arreglar el formato de la private_key si es necesario
+            if "private_key" in creds_dict:
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            client = gspread.authorize(creds)
+            
+            # Abrimos la hoja por su nombre exacto
+            sheet = client.open("SmartReceipt DB").sheet1
+            return sheet
+        else:
+            return None
     except Exception as e:
         st.error(f"❌ Error conectando a Google Sheets: {e}")
         return None
@@ -62,7 +66,7 @@ try:
     else:
         df_gastos = pd.DataFrame()
 except:
-    st.warning("No se pudo leer la base de datos. Verifica el nombre de la hoja en Drive.")
+    # st.warning("Modo Offline: No se pudo conectar a Sheets.")
     df_gastos = pd.DataFrame()
 
 # Guardar en Session State para la UI
@@ -98,15 +102,38 @@ def procesar_imagen_opencv(imagen_pil):
     return Image.fromarray(enhanced)
 
 # =======================================================
-# 3. CONEXIÓN IA
+# 3. CONEXIÓN IA (DINÁMICA - BUSCA EL MODELO DISPONIBLE)
 # =======================================================
 def obtener_modelo_valido():
-    return "gemini-1.5-flash"
+    """
+    Busca dinámicamente qué modelos tiene habilitados la API Key
+    y selecciona el mejor disponible (Flash > Pro > Cualquiera).
+    """
+    try:
+        # Obtenemos lista real de modelos disponibles para tu cuenta
+        modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 1. Buscar Flash 1.5 (Prioridad)
+        for m in modelos:
+            if 'flash' in m and '1.5' in m: return m
+        
+        # 2. Buscar Pro 1.5
+        for m in modelos:
+            if 'pro' in m and '1.5' in m: return m
+            
+        # 3. Fallback: Pro 1.0 o el primero que encuentre
+        for m in modelos:
+            if 'pro' in m: return m
+            
+        return modelos[0] if modelos else "gemini-1.5-flash"
+    except Exception as e:
+        # Si falla el listado, intentamos el default ciegamente
+        return "gemini-1.5-flash"
 
 def analizar_ticket(imagen_pil):
-    nombre = obtener_modelo_valido()
+    nombre_modelo = obtener_modelo_valido()
     try:
-        model = genai.GenerativeModel(nombre)
+        model = genai.GenerativeModel(nombre_modelo)
         cats_str = ", ".join(LISTA_CATEGORIAS)
         prompt = f"""
         Analiza ticket. JSON EXCLUSIVO.
@@ -121,12 +148,13 @@ def analizar_ticket(imagen_pil):
         }}
         """
         response = model.generate_content([prompt, imagen_pil])
-        return response.text, nombre
+        return response.text, nombre_modelo
     except Exception as e:
         error_msg = str(e)
-        if "429" in error_msg: return "CUOTA_EXCEDIDA: Espera un momento.", nombre
-        if "API key not valid" in error_msg: return "ERROR_KEY: La llave es inválida o fue revocada.", nombre
-        return f"Error API: {e}", nombre
+        if "429" in error_msg: return "CUOTA_EXCEDIDA: Espera un momento.", nombre_modelo
+        if "404" in error_msg: return f"ERROR_MODELO: No se encontró el modelo {nombre_modelo}. Actualiza requirements.txt", nombre_modelo
+        if "API key" in error_msg: return "ERROR_KEY: Llave inválida.", nombre_modelo
+        return f"Error Técnico: {e}", nombre_modelo
 
 def consultar_chat_financiero(pregunta, datos_df):
     nombre = obtener_modelo_valido()
@@ -190,21 +218,21 @@ with tab_nuevo:
             st.image(img_proc, caption="Ticket Procesado", use_container_width=True)
             
             if st.button("⚡ Procesar", type="primary"):
-                with st.spinner("Leyendo con IA..."):
+                with st.spinner("Conectando con Google AI..."):
                     txt, mod = analizar_ticket(img_proc)
                     
                     # --- BLOQUE DE DIAGNÓSTICO ---
-                    if "Error" in txt or "CUOTA" in txt:
-                        st.error(f"🛑 Problema detectado: {txt}")
-                        if "KEY" in txt:
-                            st.info("💡 Consejo: Genera una nueva API Key en Google AI Studio y actualiza los Secrets.")
+                    if "Error" in txt or "CUOTA" in txt or "ERROR" in txt:
+                        st.error(f"🛑 {txt}")
+                        if "404" in txt:
+                            st.info("💡 Solución: Ve a tu archivo 'requirements.txt' en GitHub y cambia 'google-generativeai' por 'google-generativeai>=0.7.0'")
                     else:
                         try:
                             match = re.search(r'\{.*\}', txt, re.DOTALL)
                             if match:
                                 clean_json = match.group()
                                 st.session_state['temp_data'] = json.loads(clean_json)
-                                st.toast("Datos extraídos", icon="✨")
+                                st.toast(f"Leído con {mod}", icon="✨")
                             else:
                                 st.error("⚠️ La IA no devolvió datos legibles.")
                                 with st.expander("Ver respuesta cruda (Debug)"):
