@@ -5,11 +5,11 @@ import numpy as np
 from PIL import Image
 import pandas as pd
 import json
-import re
 import os
 import altair as alt
 import pydeck as pdk
 import hashlib
+import time
 
 # =======================================================
 # 1. CONFIGURACIÓN SEGURA ☁️
@@ -50,12 +50,14 @@ COMERCIOS_CANONICOS = {
 }
 
 def normalizar_comercio(nombre):
+    if not nombre:
+        return ""
     nombre = nombre.upper()
     for canonico, variantes in COMERCIOS_CANONICOS.items():
         for v in variantes:
             if v in nombre:
                 return canonico
-    return nombre
+    return nombre.strip()
 
 # =======================================================
 # 3. CACHE IA (ANTI CUOTA / ANTI REPETICIÓN)
@@ -65,8 +67,11 @@ def hash_imagen(imagen):
 
 def cargar_cache():
     if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
     return {}
 
 def guardar_cache(cache):
@@ -91,6 +96,9 @@ if "gastos" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state["chat_history"] = []
 
+if "procesando" not in st.session_state:
+    st.session_state["procesando"] = False
+
 # =======================================================
 # 5. VISIÓN POR COMPUTADORA (SUAVE)
 # =======================================================
@@ -103,7 +111,7 @@ def procesar_imagen_opencv(imagen_pil):
     return Image.fromarray(enhanced)
 
 # =======================================================
-# 6. MODELO IA ROBUSTO
+# 6. MODELO IA ROBUSTO (CON FALLBACK)
 # =======================================================
 def obtener_modelo_valido():
     try:
@@ -145,8 +153,22 @@ Devuelve SOLO JSON:
   "detalles": ""
 }}
 """
-    response = model.generate_content([prompt, imagen])
-    return response.text
+    try:
+        response = model.generate_content([prompt, imagen])
+        return response.text
+    except Exception as e:
+        if "ResourceExhausted" in str(e):
+            return json.dumps({
+                "comercio": None,
+                "total": None,
+                "fecha": None,
+                "ubicacion": None,
+                "latitud": None,
+                "longitud": None,
+                "categoria": "Varios",
+                "detalles": "Cuota IA agotada"
+            })
+        raise e
 
 # =======================================================
 # 7. UI PRINCIPAL
@@ -168,7 +190,9 @@ with tab1:
             img_proc = procesar_imagen_opencv(img)
             st.image(img_proc, use_container_width=True)
 
-            if st.button("🧠 Escanear"):
+            if st.button("🧠 Escanear", disabled=st.session_state["procesando"]):
+                st.session_state["procesando"] = True
+
                 cache = cargar_cache()
                 h = hash_imagen(img)
 
@@ -177,19 +201,22 @@ with tab1:
                     st.toast("Leído desde caché ⚡")
                 else:
                     with st.spinner("Analizando con IA..."):
-                        raw = analizar_ticket(img)
+                        raw = analizar_ticket(img_proc)
                         clean = raw.replace("```json","").replace("```","").strip()
-                        clean = clean[clean.find("{"):clean.rfind("}")+1]
+                        if "{" in clean:
+                            clean = clean[clean.find("{"):clean.rfind("}")+1]
                         data = json.loads(clean)
                         cache[h] = data
                         guardar_cache(cache)
                         st.session_state["temp"] = data
 
+                st.session_state["procesando"] = False
+
     with col2:
         if "temp" in st.session_state:
             d = st.session_state["temp"]
 
-            vc = normalizar_comercio(d.get("comercio",""))
+            vc = normalizar_comercio(d.get("comercio"))
             vm = d.get("total") or 0.0
             vf = d.get("fecha") or pd.Timestamp.today().strftime("%d/%m/%Y")
             vu = d.get("ubicacion") or vc
@@ -211,8 +238,8 @@ with tab1:
                         "Comercio": vc,
                         "Monto": vm,
                         "Ubicación": vu,
-                        "lat": d.get("latitud",0),
-                        "lon": d.get("longitud",0),
+                        "lat": d.get("latitud") or 0,
+                        "lon": d.get("longitud") or 0,
                         "Categoría": vcat,
                         "Detalles": vdet
                     })
