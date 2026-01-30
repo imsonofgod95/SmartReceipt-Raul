@@ -63,82 +63,67 @@ if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
 # =======================================================
-# 2. MÓDULO DE VISIÓN (CORREGIDO - MENOS AGRESIVO)
+# 2. MÓDULO DE VISIÓN (OPTIMIZADO)
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
-    """
-    Simplemente mejora el contraste y escala de grises, sin binarizar agresivamente.
-    Esto ayuda a Gemini a ver mejor los detalles del texto.
-    """
     img_np = np.array(imagen_pil)
-    
-    # Convertir a BGR si es necesario
     if img_np.shape[-1] == 4:
         img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
     else:
         img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
     
-    # 1. Escala de grises
+    # Mantenemos tu lógica original de binarización
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    
-    # 2. Aumentar un poco el contraste (CLAHE) - opcional pero ayuda
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-    enhanced = clahe.apply(gray)
-    
-    return Image.fromarray(enhanced)
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 19, 11)
+    clean = cv2.fastNlMeansDenoising(thresh, None, 30, 7, 21)
+    return Image.fromarray(clean)
 
 # =======================================================
-# 3. CONEXIÓN IA (CORRECCIÓN DINÁMICA DE MODELO Y CUOTA)
+# 3. CONEXIÓN IA (CON MANEJO DE CUOTA 429)
 # =======================================================
 def obtener_modelo_valido():
     """
-    Busca dinámicamente el modelo Flash disponible para evitar errores 404.
-    Prioriza versiones estables de 1.5 para mantener la cuota gratuita de 1500 RPM.
+    Intenta buscar 'flash' primero porque es más rápido y barato para negocios.
     """
     try:
-        modelos_disp = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Intentamos encontrar gemini-1.5-flash específicamente
-        for m in modelos_disp:
-            if "gemini-1.5-flash" in m:
-                return m
-        # Si no existe, devolvemos el primero que soporte contenido
-        return modelos_disp[0]
-    except:
-        # Fallback por si list_models falla
-        return "gemini-1.5-flash"
+        lista = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Prioridad absoluta a Flash (Consume menos cuota)
+        for m in lista:
+            if 'flash' in m and '1.5' in m: return m
+        # Fallback a Pro
+        for m in lista:
+            if 'pro' in m and '1.5' in m: return m
+        return lista[0] if lista else None
+    except: return None
 
 def analizar_ticket(imagen_pil):
     nombre = obtener_modelo_valido()
+    if not nombre: return "Error: Sin modelos", ""
+    
     try:
         model = genai.GenerativeModel(nombre)
         cats_str = ", ".join(LISTA_CATEGORIAS)
         prompt = f"""
-        Analiza esta imagen de un ticket de compra. Extrae la información en formato JSON EXCLUSIVAMENTE.
+        Analiza imagen. Extrae JSON EXCLUSIVO. NO incluyas formato markdown.
+        INSTRUCCIONES UBICACIÓN: Ignora dirección fiscal. Busca SUCURSAL física y estima GPS.
+        INSTRUCCIONES CATEGORÍA: Clasifica en una de: [{cats_str}]
         
-        INSTRUCCIONES UBICACIÓN: Ignora la dirección fiscal corporativa. Busca la dirección de la SUCURSAL física y estima sus coordenadas GPS (lat/lon).
-        INSTRUCCIONES CATEGORÍA: Clasifica el gasto en una de estas categorías: [{cats_str}]
-        
-        Formato de respuesta JSON requerido:
+        JSON:
         {{
-            "comercio": "Nombre del Comercio", 
-            "total": 0.00, 
-            "fecha": "DD/MM/AAAA",
-            "ubicacion": "Nombre Sucursal o Calle", 
-            "latitud": 19.0000, 
-            "longitud": -99.0000,
-            "categoria": "Categoría elegida", 
-            "detalles": "Breve descripción de los items principales"
+            "comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA",
+            "ubicacion": "Sucursal", "latitud": 19.0000, "longitud": -99.0000,
+            "categoria": "Texto", "detalles": "Texto"
         }}
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, nombre
+        
     except Exception as e:
+        # MANEJO DE ERROR DE CUOTA (429)
         error_msg = str(e)
         if "429" in error_msg:
-            return "ERROR_CUOTA: Has excedido el límite por minuto. Espera 60 segundos.", nombre
-        if "404" in error_msg:
-            return "ERROR_MODELO: No se encontró el modelo en tu región/cuenta.", nombre
-        return f"Error API: {e}", nombre
+            return "CUOTA_EXCEDIDA: El sistema está recibiendo muchas peticiones. Por favor espera 30 segundos e intenta de nuevo.", nombre
+        return f"Error técnico: {e}", nombre
 
 def consultar_chat_financiero(pregunta, datos_df):
     nombre = obtener_modelo_valido()
@@ -147,26 +132,18 @@ def consultar_chat_financiero(pregunta, datos_df):
         datos_csv = datos_df.to_csv(index=False)
         
         prompt_sistema = f"""
-        Eres un Asistente Financiero Personal experto.
-        
-        Datos del usuario (CSV):
+        Eres un Asistente Financiero. Responde brevemente usando estos datos:
         ---
         {datos_csv}
         ---
-        
-        INSTRUCCIONES:
-        1. Responde a la pregunta del usuario basándote ÚNICAMENTE en estos datos.
-        2. Si piden cálculos, hazlos con precisión.
-        3. Sé amable y conciso.
-        
-        PREGUNTA: {pregunta}
+        Pregunta: {pregunta}
         """
         response = model.generate_content(prompt_sistema)
         return response.text
     except Exception as e:
         if "429" in str(e):
-            return "⚠️ El asistente está saturado. Por favor espera un momento."
-        return f"Error en chat: {e}"
+            return "⚠️ El asistente está saturado (Límite de cuota alcanzado). Espera un minuto."
+        return f"Error: {e}"
 
 # =======================================================
 # 4. DASHBOARD CON FILTROS
@@ -210,63 +187,65 @@ with tab_nuevo:
         if archivo:
             img = Image.open(archivo)
             img_proc = procesar_imagen_opencv(img)
-            st.image(img_proc, caption="Imagen para análisis", use_container_width=True)
+            st.image(img_proc, caption="Procesada", use_container_width=True)
             
-            if st.button("🧠 Escanear con IA", type="primary"):
+            if st.button("🧠 Escanear", type="primary"):
                 with st.spinner("Analizando ticket..."):
                     txt, mod = analizar_ticket(img_proc)
                     
-                    if "ERROR" in txt:
+                    # 1. Checar si es error de cuota
+                    if "CUOTA_EXCEDIDA" in txt:
+                        st.warning(txt)
+                    elif "Error" in txt:
                         st.error(txt)
                     else:
-                        clean = txt.replace("```json", "").replace("```", "").strip()
-                        if "{" in clean: 
-                            clean = clean[clean.find("{"):clean.rfind("}")+1]
-                        
+                        # 2. Intentar leer JSON
                         try:
-                            st.session_state['temp_data'] = json.loads(clean)
-                            st.toast("Ticket leído correctamente", icon="✅")
-                        except:
-                            st.error("Error interpretando la respuesta de la IA.")
-                            with st.expander("Ver respuesta cruda"):
-                                st.text(txt)
+                            match = re.search(r'\{.*\}', txt, re.DOTALL)
+                            if match:
+                                clean_json = match.group()
+                                st.session_state['temp_data'] = json.loads(clean_json)
+                                st.toast("Leído correctamente", icon="📍")
+                            else:
+                                st.error("La IA no devolvió datos estructurados. Reintenta.")
+                        except: 
+                            st.error("Error al procesar la respuesta.")
 
     with col_der:
         if 'temp_data' in st.session_state:
             data = st.session_state['temp_data']
             with st.form("form_save"):
-                st.subheader("Verificar Datos")
-                
+                st.subheader("Validar")
                 c1, c2 = st.columns(2)
                 vc = c1.text_input("Comercio", data.get("comercio",""))
                 
-                val_total = data.get("total", 0.0)
-                if isinstance(val_total, str):
-                    val_total = float(val_total.replace("$","").replace(",",""))
-                vm = c2.number_input("Total", value=float(val_total))
+                monto_raw = str(data.get("total",0)).replace("$","").replace(",","")
+                try: vm_f = float(monto_raw)
+                except: vm_f = 0.0
+                
+                vm = c2.number_input("Total", value=vm_f)
                 
                 c3, c4 = st.columns(2)
-                vf = c3.text_input("Fecha", data.get("fecha",""))
+                vf = c3.text_input("Fecha", data.get("fecha","Hoy"))
+                
                 cat_in = data.get("categoria", "Varios")
                 idx = LISTA_CATEGORIAS.index(cat_in) if cat_in in LISTA_CATEGORIAS else 19
                 vcat = c4.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
                 
                 c5, c6, c7 = st.columns([2, 1, 1])
                 vu = c5.text_input("Sucursal", data.get("ubicacion",""))
-                vlat = c6.number_input("Lat", value=float(data.get("latitud", 0.0)), format="%.4f")
-                vlon = c7.number_input("Lon", value=float(data.get("longitud", 0.0)), format="%.4f")
-                
+                vlat = c6.number_input("Lat", value=float(data.get("latitud", 19.4326)), format="%.4f")
+                vlon = c7.number_input("Lon", value=float(data.get("longitud", -99.1332)), format="%.4f")
                 vdet = st.text_input("Detalles", data.get("detalles",""))
                 
-                if st.form_submit_button("💾 Guardar en Historial"):
-                    nuevo_gasto = {
+                if st.form_submit_button("💾 Guardar"):
+                    st.session_state['gastos'].append({
                         "Fecha": vf, "Comercio": vc, "Monto": vm, 
                         "Ubicación": vu, "lat": vlat, "lon": vlon,
                         "Categoría": vcat, "Detalles": vdet
-                    }
-                    st.session_state['gastos'].append(nuevo_gasto)
+                    })
                     pd.DataFrame(st.session_state['gastos']).to_csv(ARCHIVO_DB, index=False)
-                    st.success("¡Guardado exitosamente!")
+                    st.success("Guardado")
                     del st.session_state['temp_data']
                     st.rerun()
 
@@ -274,9 +253,9 @@ with tab_nuevo:
 with tab_dashboard:
     if not df_filtrado.empty:
         k1, k2, k3 = st.columns(3)
-        k1.metric("💰 Gasto Total", f"${df_filtrado['Monto'].sum():,.2f}")
-        k2.metric("📊 Ticket Promedio", f"${df_filtrado['Monto'].mean():,.2f}")
-        k3.metric("🧾 Cantidad Tickets", len(df_filtrado))
+        k1.metric("💰 Total", f"${df_filtrado['Monto'].sum():,.2f}")
+        k2.metric("📊 Promedio", f"${df_filtrado['Monto'].mean():,.2f}")
+        k3.metric("🧾 Tickets", len(df_filtrado))
         st.divider()
         
         if 'lat' in df_filtrado.columns:
@@ -287,64 +266,48 @@ with tab_dashboard:
             
             if not map_data.empty:
                 st.pydeck_chart(pdk.Deck(
-                    initial_view_state=pdk.ViewState(
-                        latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11, pitch=40
-                    ),
-                    layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', 
-                                      get_color='[255, 75, 75, 200]', get_radius=200, pickable=True)],
+                    initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=10, pitch=40),
+                    layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[255, 75, 75, 200]', get_radius=400, pickable=True)],
                     tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
                 ))
+            else: st.info("Sin datos GPS válidos.")
         
         st.divider()
         g1, g2 = st.columns(2)
         with g1:
-            st.subheader("Por Categoría")
-            st.altair_chart(alt.Chart(df_filtrado).mark_arc(innerRadius=50).encode(
-                theta='Monto', color='Categoría', tooltip=['Categoría', 'Monto']), use_container_width=True)
+            st.altair_chart(alt.Chart(df_filtrado).mark_arc(innerRadius=60).encode(theta='Monto', color='Categoría', tooltip=['Categoría', 'Monto']), use_container_width=True)
         with g2:
-            st.subheader("Evolución Temporal")
             df_chart = df_filtrado.copy()
             df_chart['Fecha_dt'] = pd.to_datetime(df_chart['Fecha'], dayfirst=True, errors='coerce')
             df_chart = df_chart.dropna(subset=['Fecha_dt']).sort_values('Fecha_dt')
             if not df_chart.empty:
-                st.altair_chart(alt.Chart(df_chart).mark_line(point=True).encode(
-                    x=alt.X('Fecha_dt', title='Fecha'), y='Monto', tooltip=['Fecha', 'Monto', 'Comercio']), use_container_width=True)
+                st.altair_chart(alt.Chart(df_chart).mark_line(point=True).encode(x=alt.X('Fecha_dt', title='Fecha', axis=alt.Axis(format='%d/%m')), y='Monto', tooltip=['Fecha', 'Monto']), use_container_width=True)
+            else: st.caption("Fechas no procesables.")
             
-        with st.expander("📂 Ver Base de Datos Completa"):
+        with st.expander("Ver Datos"):
             st.dataframe(df_filtrado, use_container_width=True)
-            if st.button("🗑️ Borrar Historial"):
+            if st.button("🗑️ Borrar DB"):
                 if os.path.exists(ARCHIVO_DB): os.remove(ARCHIVO_DB)
                 st.session_state['gastos'] = []
                 st.rerun()
-    else:
-        st.info("No hay gastos registrados.")
 
 # --- PESTAÑA 3: CHAT IA ---
 with tab_chat:
     st.header("💬 Asistente Financiero")
-    
-    # Mostrar el historial guardado
     for mensaje in st.session_state['chat_history']:
         with st.chat_message(mensaje["role"]):
             st.markdown(mensaje["content"])
-
     prompt_usuario = st.chat_input("Escribe tu pregunta aquí...")
-    
     if prompt_usuario:
-        # 1. Mostrar mensaje del usuario inmediatamente
         with st.chat_message("user"):
             st.markdown(prompt_usuario)
-        
-        # 2. Guardar en el historial
         st.session_state['chat_history'].append({"role": "user", "content": prompt_usuario})
-        
         if not st.session_state['gastos']:
-            respuesta = "Aún no tienes tickets registrados en la base de datos."
+            respuesta = "Aún no tienes tickets registrados. Sube algunos primero."
         else:
             with st.spinner("Analizando tus finanzas..."):
-                # 3. Consultar a la IA
-                respuesta = consultar_chat_financiero(prompt_usuario, pd.DataFrame(st.session_state['gastos']))
-        
-        # 4. Guardar respuesta del asistente y recargar para mostrarla
+                df_chat = pd.DataFrame(st.session_state['gastos'])
+                respuesta = consultar_chat_financiero(prompt_usuario, df_chat)
+        with st.chat_message("assistant"):
+            st.markdown(respuesta)
         st.session_state['chat_history'].append({"role": "assistant", "content": respuesta})
-        st.rerun()
