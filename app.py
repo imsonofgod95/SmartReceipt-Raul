@@ -89,22 +89,16 @@ def procesar_imagen_opencv(imagen_pil):
     return Image.fromarray(enhanced)
 
 # =======================================================
-# 3. CONEXIÓN IA (VISIÓN + CHAT)
+# 3. CONEXIÓN IA (MODIFICADO PARA EVITAR ERROR DE CUOTA)
 # =======================================================
 def obtener_modelo_valido():
-    try:
-        lista = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Priorizar modelos rápidos y visuales
-        for m in lista:
-            if 'flash' in m and '1.5' in m: return m
-        for m in lista:
-            if 'pro' in m and '1.5' in m: return m
-        return lista[0] if lista else None
-    except: return None
+    # MODIFICACIÓN CLAVE:
+    # Forzamos 'gemini-1.5-flash' porque tiene 1500 peticiones gratis al día.
+    # El modelo 2.5 (experimental) solo tiene 20 y es el que te daba error.
+    return "gemini-1.5-flash"
 
 def analizar_ticket(imagen_pil):
     nombre = obtener_modelo_valido()
-    if not nombre: return "Error: Sin modelos disponibles en la API", ""
     try:
         model = genai.GenerativeModel(nombre)
         cats_str = ", ".join(LISTA_CATEGORIAS)
@@ -128,7 +122,12 @@ def analizar_ticket(imagen_pil):
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, nombre
-    except Exception as e: return f"Error API: {e}", nombre
+    except Exception as e:
+        # Manejo de error de cuota (429)
+        error_msg = str(e)
+        if "429" in error_msg:
+            return "Error 429: Has excedido la cuota por minuto. Espera 30 segundos y vuelve a intentar.", nombre
+        return f"Error API: {e}", nombre
 
 def consultar_chat_financiero(pregunta, datos_df):
     nombre = obtener_modelo_valido()
@@ -154,6 +153,8 @@ def consultar_chat_financiero(pregunta, datos_df):
         response = model.generate_content(prompt_sistema)
         return response.text
     except Exception as e:
+        if "429" in str(e):
+            return "⚠️ El asistente está saturado (Error 429). Por favor espera un momento antes de preguntar de nuevo."
         return f"Error en chat: {e}"
 
 # =======================================================
@@ -202,7 +203,7 @@ with tab_nuevo:
             st.image(img_proc, caption="Imagen para análisis", use_container_width=True)
             
             if st.button("🧠 Escanear con IA", type="primary"):
-                with st.spinner("Analizando con Gemini..."):
+                with st.spinner("Analizando con Gemini 1.5 Flash..."):
                     txt, mod = analizar_ticket(img_proc)
                     
                     # Limpieza básica del markdown json
