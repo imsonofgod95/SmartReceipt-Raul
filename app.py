@@ -47,7 +47,7 @@ def login():
                 if "usuarios" in st.secrets and usuario in st.secrets["usuarios"]:
                     if st.secrets["usuarios"][usuario] == contra:
                         st.session_state.logged_in = True
-                        st.session_state.username = usuario # Guardamos QUIÉN es
+                        st.session_state.username = usuario 
                         st.toast(f"Bienvenido, {usuario}", icon="👋")
                         st.rerun()
                     else:
@@ -57,13 +57,12 @@ def login():
 
 if not st.session_state.logged_in:
     login()
-    # Mostrar legales incluso en el login
     with st.expander("⚖️ Términos y Privacidad"):
         st.caption("Al iniciar sesión, aceptas nuestros términos de servicio.")
     st.stop()
 
 # =======================================================
-# 2. CONEXIONES (SHEETS + IA) - CON AUTO-REPARACIÓN 🛠️
+# 2. CONEXIONES (SHEETS + IA) - CON AUTO-REPARACIÓN INTELIGENTE 🛠️
 # =======================================================
 
 # A) Configurar Gemini
@@ -87,40 +86,44 @@ def conectar_google_sheets():
             client = gspread.authorize(creds)
             hoja = client.open("SmartReceipt DB").sheet1
             
-            # --- AUTO-REPARACIÓN DE ENCABEZADOS ---
-            # Verificamos si la hoja está vacía. Si sí, escribimos los títulos.
-            if not hoja.get_all_values():
-                encabezados = ["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"]
-                hoja.append_row(encabezados)
-                st.toast("Base de datos inicializada correctamente", icon="🏗️")
+            # --- AUTO-REPARACIÓN DE ENCABEZADOS (LÓGICA MEJORADA) ---
+            # Leemos solo la primera celda A1 para no gastar cuota
+            val_a1 = hoja.acell('A1').value
+            
+            # Si A1 no es "Usuario", significa que tenemos encabezados viejos o vacíos
+            if val_a1 != "Usuario":
+                encabezados_correctos = ["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"]
+                
+                # Si está vacío, solo agregamos
+                if not val_a1:
+                    hoja.append_row(encabezados_correctos)
+                else:
+                    # Si tiene datos viejos, insertamos la fila 1 nueva empujando lo demás abajo
+                    hoja.insert_row(encabezados_correctos, 1)
+                    st.toast("Base de datos actualizada a versión SaaS", icon="🏗️")
             
             return hoja
         return None
     except Exception as e:
-        st.error(f"Error DB: {e}")
+        st.error(f"Error Conexión DB: {e}")
         return None
 
 # Cargar datos FILTRADOS POR USUARIO
 try:
     hoja_db = conectar_google_sheets()
     if hoja_db:
-        # Usamos get_all_records que ahora funcionará porque GARANTIZAMOS los encabezados
         raw_data = hoja_db.get_all_records()
         df_full = pd.DataFrame(raw_data)
         
-        if df_full.empty:
-            df_full = pd.DataFrame(columns=["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"])
-        
-        # FILTRO DE SEGURIDAD: Solo mostramos los datos del usuario logueado
+        # Filtro de seguridad robusto
         if "Usuario" in df_full.columns:
             df_gastos = df_full[df_full["Usuario"] == st.session_state.username].copy()
         else:
-            # Si faltan columnas críticas, forzamos un dataframe vacío seguro
+            # Si aún falla, devolvemos vacío pero no rompemos la app
             df_gastos = pd.DataFrame(columns=["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"])
     else:
         df_gastos = pd.DataFrame()
 except Exception as e:
-    # st.error(f"Error cargando datos: {e}") 
     df_gastos = pd.DataFrame()
 
 if 'gastos' not in st.session_state:
@@ -195,7 +198,6 @@ with st.sidebar:
         st.rerun()
     st.divider()
     
-    # --- SECCIÓN LEGAL EN SIDEBAR ---
     with st.expander("⚖️ Legal y Privacidad"):
         st.caption("**Aviso de Privacidad:**")
         st.markdown("""<small>SmartReceipt utiliza Inteligencia Artificial (Google Gemini) para procesar sus tickets. 
@@ -212,15 +214,16 @@ with st.sidebar:
 # Preparar datos filtrados
 df = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
-if not df.empty and "Monto" in df.columns: # Check extra para evitar errores
+if not df.empty and "Monto" in df.columns:
     if 'lat' in df.columns: df['lat'] = pd.to_numeric(df['lat'], errors='coerce').fillna(0.0)
     if 'lon' in df.columns: df['lon'] = pd.to_numeric(df['lon'], errors='coerce').fillna(0.0)
     if 'Monto' in df.columns: df['Monto'] = pd.to_numeric(df['Monto'], errors='coerce').fillna(0.0)
     
-    sel_cat = st.sidebar.multiselect("Categoría", sorted(df['Categoría'].astype(str).unique()) if 'Categoría' in df.columns else [])
+    cat_opts = sorted(df['Categoría'].astype(str).unique()) if 'Categoría' in df.columns else []
+    sel_cat = st.sidebar.multiselect("Categoría", cat_opts)
     
-    mask_cat = df['Categoría'].isin(sel_cat) if 'Categoría' in df.columns else True
-    df_filtrado = df[mask_cat]
+    if sel_cat: df_filtrado = df[df['Categoría'].isin(sel_cat)]
+    else: df_filtrado = df
 
 st.title("💳 SmartReceipt: Business Cloud")
 tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Analytics", "💬 Asistente IA"])
@@ -260,17 +263,16 @@ with tab_nuevo:
                 vu = st.text_input("Sucursal", data.get("ubicacion",""))
                 vdet = st.text_input("Detalles", data.get("detalles",""))
                 
-                # Campos ocultos de GPS
                 vlat = float(data.get("latitud", 0.0))
                 vlon = float(data.get("longitud", 0.0))
 
                 if st.form_submit_button("💾 Guardar Ticket"):
-                    # AHORA GUARDAMOS TAMBIÉN EL USUARIO
+                    # DATOS A GUARDAR (9 columnas)
                     nueva_fila = [st.session_state.username, vf, vc, vm, vu, vlat, vlon, vcat, vdet]
                     if hoja_db:
                         try:
                             hoja_db.append_row(nueva_fila)
-                            st.success("Guardado en tu cuenta.")
+                            st.success("Guardado correctamente.")
                             st.session_state['gastos'].append({
                                 "Usuario": st.session_state.username,
                                 "Fecha": vf, "Comercio": vc, "Monto": vm, 
