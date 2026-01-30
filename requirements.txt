@@ -5,4 +5,7 @@ numpy
 pandas
 Pillow
 altair
+
 pydeck
+gspread
+oauth2client
