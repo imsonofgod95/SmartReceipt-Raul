@@ -194,16 +194,15 @@ with tab_nuevo:
                 with st.spinner("Analizando..."):
                     txt, mod = analizar_ticket(img_proc)
                     
-                    # AJUSTE ROBUSTO PARA ERROR DE LECTURA
+                    # AJUSTE ROBUSTO PARA ERROR DE LECTURA (REGEX)
                     try:
-                        # Extraer solo el JSON usando Regex por si la IA agrega texto extra
                         match = re.search(r'\{.*\}', txt, re.DOTALL)
                         if match:
                             clean_json = match.group()
                             st.session_state['temp_data'] = json.loads(clean_json)
-                            st.toast("Leído", icon="📍")
+                            st.toast("Leído correctamente", icon="📍")
                         else:
-                            st.error("No se detectó un formato JSON válido.")
+                            st.error("Error: El formato de respuesta no fue reconocido.")
                     except: 
                         st.error("Error al decodificar la respuesta de la IA.")
 
@@ -215,7 +214,7 @@ with tab_nuevo:
                 c1, c2 = st.columns(2)
                 vc = c1.text_input("Comercio", data.get("comercio",""))
                 
-                # Limpieza de monto previa al número
+                # Limpieza de monto previa al número (Quita $ y comas)
                 monto_raw = str(data.get("total",0)).replace("$","").replace(",","")
                 try: vm_f = float(monto_raw)
                 except: vm_f = 0.0
@@ -275,7 +274,6 @@ with tab_dashboard:
         with g1:
             st.altair_chart(alt.Chart(df_filtrado).mark_arc(innerRadius=60).encode(theta='Monto', color='Categoría', tooltip=['Categoría', 'Monto']), use_container_width=True)
         with g2:
-            # Fix Fechas
             df_chart = df_filtrado.copy()
             df_chart['Fecha_dt'] = pd.to_datetime(df_chart['Fecha'], dayfirst=True, errors='coerce')
             df_chart = df_chart.dropna(subset=['Fecha_dt']).sort_values('Fecha_dt')
@@ -290,35 +288,24 @@ with tab_dashboard:
                 st.session_state['gastos'] = []
                 st.rerun()
 
-# --- PESTAÑA 3: CHAT IA (NUEVO) ---
+# --- PESTAÑA 3: CHAT IA ---
 with tab_chat:
     st.header("💬 Asistente Financiero")
     st.caption("Pregunta sobre tus gastos. Ej: '¿Cuánto gasté en Gasolina este mes?'")
-
-    # Contenedor del chat
     for mensaje in st.session_state['chat_history']:
         with st.chat_message(mensaje["role"]):
             st.markdown(mensaje["content"])
-
-    # Input del usuario
     prompt_usuario = st.chat_input("Escribe tu pregunta aquí...")
-    
     if prompt_usuario:
-        # 1. Mostrar mensaje usuario
         with st.chat_message("user"):
             st.markdown(prompt_usuario)
         st.session_state['chat_history'].append({"role": "user", "content": prompt_usuario})
-        
-        # 2. Verificar si hay datos
         if not st.session_state['gastos']:
             respuesta = "Aún no tienes tickets registrados. Sube algunos primero."
         else:
-            # 3. Procesar con IA
             with st.spinner("Analizando tus finanzas..."):
                 df_chat = pd.DataFrame(st.session_state['gastos'])
                 respuesta = consultar_chat_financiero(prompt_usuario, df_chat)
-        
-        # 4. Mostrar respuesta IA
         with st.chat_message("assistant"):
             st.markdown(respuesta)
         st.session_state['chat_history'].append({"role": "assistant", "content": respuesta})
