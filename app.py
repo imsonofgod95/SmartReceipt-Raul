@@ -322,19 +322,29 @@ with tab_dashboard:
 # --- PESTAÑA 3: CHAT IA ---
 with tab_chat:
     st.header("💬 Asistente Financiero")
+    
+    # Mostrar el historial guardado
     for mensaje in st.session_state['chat_history']:
-        with st.chat_message(mensaje["role"]): st.markdown(mensaje["content"])
+        with st.chat_message(mensaje["role"]):
+            st.markdown(mensaje["content"])
 
     prompt_usuario = st.chat_input("Escribe tu pregunta aquí...")
+    
     if prompt_usuario:
-        with st.chat_message("user"): st.markdown(prompt_usuario)
+        # 1. Mostrar mensaje del usuario inmediatamente
+        with st.chat_message("user"):
+            st.markdown(prompt_usuario)
+        
+        # 2. Guardar en el historial
         st.session_state['chat_history'].append({"role": "user", "content": prompt_usuario})
         
         if not st.session_state['gastos']:
-            respuesta = "Aún no tienes tickets registrados."
+            respuesta = "Aún no tienes tickets registrados en la base de datos."
         else:
-            with st.spinner("Pensando..."):
+            with st.spinner("Analizando tus finanzas..."):
+                # 3. Consultar a la IA
                 respuesta = consultar_chat_financiero(prompt_usuario, pd.DataFrame(st.session_state['gastos']))
         
-        with st.chat_message("assistant"): st.markdown(respuesta)
+        # 4. Guardar respuesta del asistente y recargar para mostrarla
         st.session_state['chat_history'].append({"role": "assistant", "content": respuesta})
+        st.rerun()
