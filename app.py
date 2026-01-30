@@ -8,25 +8,29 @@ import json
 import re
 import os
 import altair as alt
-import pydeck as pdk
+import pydeck as pdk 
 
 # =======================================================
-# 1. CONFIGURACIÓN SEGURA (CLOUD READY)
+# 1. CONFIGURACIÓN SEGURA (CLOUD READY) ☁️
 # =======================================================
 st.set_page_config(page_title="SmartReceipt Cloud", layout="wide", page_icon="☁️")
 
+# Intentamos leer la API KEY desde los "Secretos" de Streamlit
+# Esto evita que te roben la llave cuando subas el código a GitHub.
 try:
     if "GOOGLE_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+        api_key = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=api_key)
     else:
-        st.error("⚠️ Falta la API Key en Secrets")
+        st.error("⚠️ Falta la API Key. Por favor configúrala en los 'Secrets' de Streamlit Cloud.")
         st.stop()
 except Exception as e:
-    st.error(f"⚠️ Error API: {e}")
+    st.error(f"⚠️ Error de configuración: {e}. Si estás en local, crea un archivo .streamlit/secrets.toml")
     st.stop()
 
 ARCHIVO_DB = "historial_gastos.csv"
 
+# LISTA MAESTRA DE CATEGORÍAS
 LISTA_CATEGORIAS = [
     "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
     "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)",
@@ -37,204 +41,271 @@ LISTA_CATEGORIAS = [
     "Mantenimiento Automotriz", "Varios"
 ]
 
-# =======================================================
-# 2. CARGA INICIAL
-# =======================================================
-if "gastos" not in st.session_state:
+# --- CARGA INICIAL ROBUSTA ---
+if 'gastos' not in st.session_state:
     if os.path.exists(ARCHIVO_DB):
         try:
-            df = pd.read_csv(ARCHIVO_DB)
-            for c in ["lat", "lon"]:
-                if c not in df.columns:
-                    df[c] = 0.0
-            st.session_state["gastos"] = df.to_dict("records")
+            df_disco = pd.read_csv(ARCHIVO_DB)
+            # Migración y limpieza
+            if 'lat' not in df_disco.columns: df_disco['lat'] = 0.0 
+            if 'lon' not in df_disco.columns: df_disco['lon'] = 0.0
+            df_disco['lat'] = pd.to_numeric(df_disco['lat'], errors='coerce').fillna(0.0)
+            df_disco['lon'] = pd.to_numeric(df_disco['lon'], errors='coerce').fillna(0.0)
+            
+            df_disco.to_csv(ARCHIVO_DB, index=False)
+            st.session_state['gastos'] = df_disco.to_dict('records')
         except:
-            st.session_state["gastos"] = []
+            st.session_state['gastos'] = []
     else:
-        st.session_state["gastos"] = []
+        st.session_state['gastos'] = []
 
-if "chat_history" not in st.session_state:
-    st.session_state["chat_history"] = []
+# Inicializar historial del Chatbot
+if 'chat_history' not in st.session_state:
+    st.session_state['chat_history'] = []
 
 # =======================================================
-# 3. PROCESAMIENTO VISUAL (SOLO PARA MOSTRAR)
+# 2. MÓDULO DE VISIÓN
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
-    img = np.array(imagen_pil)
-    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    thresh = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 31, 11
-    )
-    return Image.fromarray(thresh)
+    img_np = np.array(imagen_pil)
+    if img_np.shape[-1] == 4:
+        img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
+    else:
+        img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+    
+    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 19, 11)
+    clean = cv2.fastNlMeansDenoising(thresh, None, 30, 7, 21)
+    return Image.fromarray(clean)
 
 # =======================================================
-# 4. IA – MODELO
+# 3. CONEXIÓN IA (VISIÓN + CHAT)
 # =======================================================
 def obtener_modelo_valido():
     try:
-        modelos = [m.name for m in genai.list_models()
-                   if "generateContent" in m.supported_generation_methods]
-        for m in modelos:
-            if "flash" in m and "1.5" in m:
-                return m
-        return modelos[0]
-    except:
-        return None
+        lista = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        for m in lista:
+            if 'flash' in m and '1.5' in m: return m
+        for m in lista:
+            if 'pro' in m and '1.5' in m: return m
+        return lista[0] if lista else None
+    except: return None
 
-# =======================================================
-# 5. ANALIZAR TICKET (VISION)
-# =======================================================
-def analizar_ticket(imagen_original):
-    modelo = obtener_modelo_valido()
-    if not modelo:
-        return "{}", ""
-
-    prompt = f"""
-Analiza este ticket (puede ser Costco, Juguetron u otro).
-Devuelve SOLO JSON válido.
-
-REGLAS IMPORTANTES:
-- Costco suele poner TOTAL al final
-- Fecha puede venir como DD/MM/AAAA o DD-MM-AAAA
-- Ubicación = sucursal (NO razón social)
-- Si no hay algo claro, infiere lo más probable
-
-JSON:
-{{
-  "comercio": "Texto",
-  "total": 0.00,
-  "fecha": "DD/MM/AAAA",
-  "ubicacion": "Sucursal",
-  "latitud": 19.4326,
-  "longitud": -99.1332,
-  "categoria": "Varios",
-  "detalles": "Texto libre"
-}}
-"""
+def analizar_ticket(imagen_pil):
+    nombre = obtener_modelo_valido()
+    if not nombre: return "Error: Sin modelos", ""
     try:
-        model = genai.GenerativeModel(modelo)
-        response = model.generate_content([prompt, imagen_original])
-        return response.text, modelo
+        model = genai.GenerativeModel(nombre)
+        cats_str = ", ".join(LISTA_CATEGORIAS)
+        prompt = f"""
+        Analiza imagen. Extrae JSON EXCLUSIVO.
+        INSTRUCCIONES UBICACIÓN: Ignora dirección fiscal. Busca SUCURSAL física y estima GPS.
+        INSTRUCCIONES CATEGORÍA: Clasifica en una de: [{cats_str}]
+        
+        JSON:
+        {{
+            "comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA",
+            "ubicacion": "Sucursal", "latitud": 19.0000, "longitud": -99.0000,
+            "categoria": "Texto", "detalles": "Texto"
+        }}
+        """
+        response = model.generate_content([prompt, imagen_pil])
+        return response.text, nombre
+    except Exception as e: return f"Error: {e}", nombre
+
+def consultar_chat_financiero(pregunta, datos_df):
+    """
+    Toma todo el historial de gastos y se lo pasa a la IA para que responda preguntas.
+    """
+    nombre = obtener_modelo_valido()
+    try:
+        model = genai.GenerativeModel(nombre)
+        
+        # Convertimos el DataFrame a texto CSV para que la IA lo lea
+        datos_csv = datos_df.to_csv(index=False)
+        
+        prompt_sistema = f"""
+        Eres un Asistente Financiero Personal experto.
+        
+        A continuación tienes el historial de gastos del usuario en formato CSV:
+        ---
+        {datos_csv}
+        ---
+        
+        INSTRUCCIONES:
+        1. Responde a la pregunta del usuario basándote ÚNICAMENTE en estos datos.
+        2. Si te piden sumas, promedios o máximos, calcúlalos con precisión.
+        3. Sé amable, breve y directo.
+        4. Si notas gastos excesivos en "Restaurantes" o "Varios", da un pequeño consejo de ahorro amigable.
+        
+        PREGUNTA DEL USUARIO: {pregunta}
+        """
+        
+        response = model.generate_content(prompt_sistema)
+        return response.text
     except Exception as e:
-        return f"{{}}", modelo
+        return f"Lo siento, tuve un error analizando los datos: {e}"
 
 # =======================================================
-# 6. CHAT FINANCIERO
+# 4. DASHBOARD CON FILTROS
 # =======================================================
-def consultar_chat_financiero(pregunta, df):
-    modelo = obtener_modelo_valido()
-    model = genai.GenerativeModel(modelo)
-    csv = df.to_csv(index=False)
+st.sidebar.header("🔍 Filtros")
+df_filtrado = pd.DataFrame()
 
-    prompt = f"""
-Eres un asistente financiero.
-Datos CSV:
-{csv}
-
-Pregunta:
-{pregunta}
-"""
-    try:
-        r = model.generate_content(prompt)
-        return r.text
-    except:
-        return "Error analizando datos."
+if st.session_state['gastos']:
+    df = pd.DataFrame(st.session_state['gastos'])
+    
+    if 'Categoría' in df.columns:
+        cats = sorted(df['Categoría'].astype(str).unique().tolist())
+        sel_cat = st.sidebar.multiselect("Categoría", cats, default=cats)
+    else: sel_cat = []
+        
+    if 'Comercio' in df.columns:
+        coms = sorted(df['Comercio'].astype(str).unique().tolist())
+        sel_com = st.sidebar.multiselect("Comercio", coms, default=coms)
+    else: sel_com = []
+    
+    if not df.empty:
+        mask_cat = df['Categoría'].isin(sel_cat) if 'Categoría' in df.columns else True
+        mask_com = df['Comercio'].isin(sel_com) if 'Comercio' in df.columns else True
+        df_filtrado = df[mask_cat & mask_com]
+else:
+    st.sidebar.info("Sube tickets para habilitar filtros.")
 
 # =======================================================
-# 7. UI
+# 5. INTERFAZ PRINCIPAL
 # =======================================================
-st.title("🧠 SmartReceipt – Cloud Edition")
-tab1, tab2, tab3 = st.tabs(["📸 Nuevo Ticket", "📊 Dashboard", "💬 Chat IA"])
+st.title("🧠 SmartReceipt: Cloud Edition")
+st.markdown("---")
 
-# ===================== TAB 1 ===========================
-with tab1:
-    col1, col2 = st.columns(2)
+# AHORA SON 3 PESTAÑAS
+tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Dashboard", "💬 Chat IA"])
 
-    with col1:
-        archivo = st.file_uploader("Sube ticket", type=["jpg", "jpeg", "png"])
+# --- PESTAÑA 1: CARGA ---
+with tab_nuevo:
+    col_izq, col_der = st.columns([1, 1])
+    with col_izq:
+        archivo = st.file_uploader("Sube ticket", type=["jpg", "png", "jpeg"])
         if archivo:
-            img_original = Image.open(archivo).convert("RGB")
-            img_proc = procesar_imagen_opencv(img_original)
-
-            st.image(img_proc, caption="Procesada (solo visual)", use_container_width=True)
-
+            img = Image.open(archivo)
+            img_proc = procesar_imagen_opencv(img)
+            st.image(img_proc, caption="Procesada", use_container_width=True)
             if st.button("🧠 Escanear", type="primary"):
-                with st.spinner("Analizando ticket..."):
-                    texto, _ = analizar_ticket(img_original)
-
-                    limpio = texto.replace("```json", "").replace("```", "").strip()
-                    if "{" in limpio:
-                        limpio = limpio[limpio.find("{"): limpio.rfind("}") + 1]
-
+                with st.spinner("Analizando..."):
+                    txt, mod = analizar_ticket(img_proc)
+                    clean = txt.replace("```json", "").replace("```", "").strip()
+                    if "{" in clean: clean = clean[clean.find("{"):clean.rfind("}")+1]
                     try:
-                        data = json.loads(limpio)
+                        st.session_state['temp_data'] = json.loads(clean)
+                        st.toast("Leído", icon="📍")
+                    except: st.error("Error lectura")
 
-                        # Normalizaciones defensivas
-                        data["total"] = float(str(data.get("total", 0)).replace("$", "").replace(",", ""))
-                        if not re.match(r"\d{2}/\d{2}/\d{4}", data.get("fecha", "")):
-                            data["fecha"] = ""
-
-                        st.session_state["temp_data"] = data
-                        st.toast("Ticket leído correctamente", icon="✅")
-                    except:
-                        st.error("No se pudo interpretar el ticket")
-
-    with col2:
-        if "temp_data" in st.session_state:
-            d = st.session_state["temp_data"]
-            with st.form("guardar"):
-                st.subheader("Validar datos")
-
-                vc = st.text_input("Comercio", d.get("comercio", ""))
-                vm = st.number_input("Monto", value=d.get("total", 0.0))
-                vf = st.text_input("Fecha", d.get("fecha", ""))
-
-                cat = d.get("categoria", "Varios")
-                idx = LISTA_CATEGORIAS.index(cat) if cat in LISTA_CATEGORIAS else -1
-                vcat = st.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
-
-                vu = st.text_input("Sucursal", d.get("ubicacion", ""))
-                vlat = st.number_input("Lat", value=float(d.get("latitud", 19.4326)))
-                vlon = st.number_input("Lon", value=float(d.get("longitud", -99.1332)))
-                vdet = st.text_input("Detalles", d.get("detalles", ""))
-
+    with col_der:
+        if 'temp_data' in st.session_state:
+            data = st.session_state['temp_data']
+            with st.form("form_save"):
+                st.subheader("Validar")
+                c1, c2 = st.columns(2)
+                vc = c1.text_input("Comercio", data.get("comercio",""))
+                vm = c2.number_input("Total", value=float(str(data.get("total",0)).replace("$","").replace(",","")) if data.get("total") else 0.0)
+                
+                c3, c4 = st.columns(2)
+                vf = c3.text_input("Fecha", data.get("fecha","Hoy"))
+                
+                cat_in = data.get("categoria", "Varios")
+                idx = LISTA_CATEGORIAS.index(cat_in) if cat_in in LISTA_CATEGORIAS else 19
+                vcat = c4.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
+                
+                c5, c6, c7 = st.columns([2, 1, 1])
+                vu = c5.text_input("Sucursal", data.get("ubicacion",""))
+                vlat = c6.number_input("Lat", value=float(data.get("latitud", 19.4326)), format="%.4f")
+                vlon = c7.number_input("Lon", value=float(data.get("longitud", -99.1332)), format="%.4f")
+                vdet = st.text_input("Detalles", data.get("detalles",""))
+                
                 if st.form_submit_button("💾 Guardar"):
-                    st.session_state["gastos"].append({
-                        "Fecha": vf,
-                        "Comercio": vc,
-                        "Monto": vm,
-                        "Ubicación": vu,
-                        "lat": vlat,
-                        "lon": vlon,
-                        "Categoría": vcat,
-                        "Detalles": vdet
+                    st.session_state['gastos'].append({
+                        "Fecha": vf, "Comercio": vc, "Monto": vm, 
+                        "Ubicación": vu, "lat": vlat, "lon": vlon,
+                        "Categoría": vcat, "Detalles": vdet
                     })
-                    pd.DataFrame(st.session_state["gastos"]).to_csv(ARCHIVO_DB, index=False)
-                    del st.session_state["temp_data"]
+                    pd.DataFrame(st.session_state['gastos']).to_csv(ARCHIVO_DB, index=False)
                     st.success("Guardado")
+                    del st.session_state['temp_data']
                     st.rerun()
 
-# ===================== TAB 2 ===========================
-with tab2:
-    if st.session_state["gastos"]:
-        df = pd.DataFrame(st.session_state["gastos"])
-        st.metric("💰 Total", f"${df['Monto'].sum():,.2f}")
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("Aún no hay datos")
+# --- PESTAÑA 2: DASHBOARD ---
+with tab_dashboard:
+    if not df_filtrado.empty:
+        k1, k2, k3 = st.columns(3)
+        k1.metric("💰 Total", f"${df_filtrado['Monto'].sum():,.2f}")
+        k2.metric("📊 Promedio", f"${df_filtrado['Monto'].mean():,.2f}")
+        k3.metric("🧾 Tickets", len(df_filtrado))
+        st.divider()
+        
+        # Mapa
+        if 'lat' in df_filtrado.columns:
+            map_data = df_filtrado.copy()
+            map_data['lat'] = pd.to_numeric(map_data['lat'], errors='coerce').fillna(0)
+            map_data['lon'] = pd.to_numeric(map_data['lon'], errors='coerce').fillna(0)
+            map_data = map_data[(map_data['lat']!=0) & (map_data['lon']!=0)]
+            
+            if not map_data.empty:
+                st.pydeck_chart(pdk.Deck(
+                    initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=10, pitch=40),
+                    layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[255, 75, 75, 200]', get_radius=400, pickable=True)],
+                    tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
+                ))
+            else: st.info("Sin datos GPS válidos.")
+        
+        st.divider()
+        g1, g2 = st.columns(2)
+        with g1:
+            st.altair_chart(alt.Chart(df_filtrado).mark_arc(innerRadius=60).encode(theta='Monto', color='Categoría', tooltip=['Categoría', 'Monto']), use_container_width=True)
+        with g2:
+            # Fix Fechas
+            df_chart = df_filtrado.copy()
+            df_chart['Fecha_dt'] = pd.to_datetime(df_chart['Fecha'], dayfirst=True, errors='coerce')
+            df_chart = df_chart.dropna(subset=['Fecha_dt']).sort_values('Fecha_dt')
+            if not df_chart.empty:
+                st.altair_chart(alt.Chart(df_chart).mark_line(point=True).encode(x=alt.X('Fecha_dt', title='Fecha', axis=alt.Axis(format='%d/%m')), y='Monto', tooltip=['Fecha', 'Monto']), use_container_width=True)
+            else: st.caption("Fechas no procesables.")
+            
+        with st.expander("Ver Datos"):
+            st.dataframe(df_filtrado, use_container_width=True)
+            if st.button("🗑️ Borrar DB"):
+                if os.path.exists(ARCHIVO_DB): os.remove(ARCHIVO_DB)
+                st.session_state['gastos'] = []
+                st.rerun()
 
-# ===================== TAB 3 ===========================
-with tab3:
-    for m in st.session_state["chat_history"]:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
+# --- PESTAÑA 3: CHAT IA (NUEVO) ---
+with tab_chat:
+    st.header("💬 Asistente Financiero")
+    st.caption("Pregunta sobre tus gastos. Ej: '¿Cuánto gasté en Gasolina este mes?'")
 
-    q = st.chat_input("Pregunta sobre tus gastos...")
-    if q:
-        st.session_state["chat_history"].append({"role": "user", "content": q})
+    # Contenedor del chat
+    for mensaje in st.session_state['chat_history']:
+        with st.chat_message(mensaje["role"]):
+            st.markdown(mensaje["content"])
+
+    # Input del usuario
+    prompt_usuario = st.chat_input("Escribe tu pregunta aquí...")
+    
+    if prompt_usuario:
+        # 1. Mostrar mensaje usuario
+        with st.chat_message("user"):
+            st.markdown(prompt_usuario)
+        st.session_state['chat_history'].append({"role": "user", "content": prompt_usuario})
+        
+        # 2. Verificar si hay datos
+        if not st.session_state['gastos']:
+            respuesta = "Aún no tienes tickets registrados. Sube algunos primero."
+        else:
+            # 3. Procesar con IA
+            with st.spinner("Analizando tus finanzas..."):
+                df_chat = pd.DataFrame(st.session_state['gastos'])
+                respuesta = consultar_chat_financiero(prompt_usuario, df_chat)
+        
+        # 4. Mostrar respuesta IA
         with st.chat_message("assistant"):
-            r = consultar_chat_financiero(q, pd.DataFrame(st.session_state["gastos"]))
-            st.markdown(r)
-        st.session_state["chat_history"].append({"role": "assistant", "content": r})
+            st.markdown(respuesta)
+        st.session_state['chat_history'].append({"role": "assistant", "content": respuesta})
