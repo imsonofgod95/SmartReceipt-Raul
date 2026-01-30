@@ -7,30 +7,24 @@ import pandas as pd
 import json
 import os
 import altair as alt
-import pydeck as pdk
 import hashlib
-import time
 
 # =======================================================
-# 1. CONFIGURACIÓN SEGURA ☁️
+# 1. CONFIGURACIÓN
 # =======================================================
 st.set_page_config(page_title="SmartReceipt Cloud", layout="wide", page_icon="☁️")
 
-try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    else:
-        st.error("⚠️ Falta la API Key en Secrets.")
-        st.stop()
-except Exception as e:
-    st.error(f"Error de configuración: {e}")
+if "GOOGLE_API_KEY" not in st.secrets:
+    st.error("⚠️ Falta GOOGLE_API_KEY en Secrets")
     st.stop()
+
+genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 
 ARCHIVO_DB = "historial_gastos.csv"
 CACHE_FILE = "cache_ia.json"
 
 # =======================================================
-# 2. CATÁLOGOS MAESTROS
+# 2. CATÁLOGOS
 # =======================================================
 LISTA_CATEGORIAS = [
     "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
@@ -43,9 +37,9 @@ LISTA_CATEGORIAS = [
 ]
 
 COMERCIOS_CANONICOS = {
-    "COSTCO": ["COSTCO", "COSTCO WHOLESALE", "COSTCO GAS"],
+    "COSTCO": ["COSTCO"],
     "JUGUETRON": ["JUGUETRON", "JUGUETRÓN"],
-    "WALMART": ["WALMART", "WAL MART"],
+    "WALMART": ["WALMART"],
     "OXXO": ["OXXO"]
 }
 
@@ -53,25 +47,22 @@ def normalizar_comercio(nombre):
     if not nombre:
         return ""
     nombre = nombre.upper()
-    for canonico, variantes in COMERCIOS_CANONICOS.items():
+    for canon, variantes in COMERCIOS_CANONICOS.items():
         for v in variantes:
             if v in nombre:
-                return canonico
-    return nombre.strip()
+                return canon
+    return nombre
 
 # =======================================================
-# 3. CACHE IA (ANTI CUOTA / ANTI REPETICIÓN)
+# 3. CACHE IA
 # =======================================================
 def hash_imagen(imagen):
     return hashlib.md5(imagen.tobytes()).hexdigest()
 
 def cargar_cache():
     if os.path.exists(CACHE_FILE):
-        try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
     return {}
 
 def guardar_cache(cache):
@@ -79,43 +70,34 @@ def guardar_cache(cache):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 # =======================================================
-# 4. CARGA BASE DE DATOS
+# 4. BASE DE DATOS
 # =======================================================
 if "gastos" not in st.session_state:
     if os.path.exists(ARCHIVO_DB):
-        try:
-            df = pd.read_csv(ARCHIVO_DB)
-            if "lat" not in df: df["lat"] = 0.0
-            if "lon" not in df: df["lon"] = 0.0
-            st.session_state["gastos"] = df.to_dict("records")
-        except:
-            st.session_state["gastos"] = []
+        df = pd.read_csv(ARCHIVO_DB)
+        st.session_state["gastos"] = df.to_dict("records")
     else:
         st.session_state["gastos"] = []
 
-if "chat_history" not in st.session_state:
-    st.session_state["chat_history"] = []
-
-if "procesando" not in st.session_state:
-    st.session_state["procesando"] = False
-
 # =======================================================
-# 5. VISIÓN POR COMPUTADORA (SUAVE)
+# 5. VISIÓN COMPUTACIONAL (LIGERA)
 # =======================================================
-def procesar_imagen_opencv(imagen_pil):
-    img_np = np.array(imagen_pil)
-    img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-    gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(2.0, (8,8))
-    enhanced = clahe.apply(gray)
-    return Image.fromarray(enhanced)
+def procesar_imagen_opencv(imagen):
+    img = np.array(imagen)
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    clahe = cv2.createCLAHE(2.0, (8, 8))
+    img = clahe.apply(img)
+    return Image.fromarray(img)
 
 # =======================================================
-# 6. MODELO IA ROBUSTO (CON FALLBACK)
+# 6. MODELO IA ROBUSTO
 # =======================================================
 def obtener_modelo_valido():
     try:
-        modelos = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
+        modelos = [
+            m.name for m in genai.list_models()
+            if "generateContent" in m.supported_generation_methods
+        ]
         for m in modelos:
             if "gemini-1.5-flash" in m:
                 return m
@@ -126,19 +108,18 @@ def obtener_modelo_valido():
 def analizar_ticket(imagen):
     modelo = obtener_modelo_valido()
     model = genai.GenerativeModel(modelo)
-    cats = ", ".join(LISTA_CATEGORIAS)
+    categorias = ", ".join(LISTA_CATEGORIAS)
 
     prompt = f"""
-Analiza esta imagen de un ticket REAL.
+Analiza este ticket.
 
 REGLAS:
-- No inventes datos.
-- Si no existe un campo, usa null.
-- El total es el MONTO FINAL PAGADO.
-- Usa DD/MM/AAAA.
-- Comercio corto y reconocible.
+- No inventes datos
+- Si no existe, usa null
+- Fecha DD/MM/AAAA
+- Total = monto final pagado
 
-Categorías válidas: [{cats}]
+Categorías válidas: [{categorias}]
 
 Devuelve SOLO JSON:
 
@@ -153,95 +134,94 @@ Devuelve SOLO JSON:
   "detalles": ""
 }}
 """
+
     try:
         response = model.generate_content([prompt, imagen])
         return response.text
+
     except Exception as e:
-        if "ResourceExhausted" in str(e):
-            return json.dumps({
-                "comercio": None,
-                "total": None,
-                "fecha": None,
-                "ubicacion": None,
-                "latitud": None,
-                "longitud": None,
-                "categoria": "Varios",
-                "detalles": "Cuota IA agotada"
-            })
-        raise e
+        error = str(e)
+
+        if "ResourceExhausted" in error:
+            st.warning("⚠️ Cuota de IA agotada. Usando fallback.")
+        else:
+            st.error("❌ Error IA. Usando fallback seguro.")
+
+        return json.dumps({
+            "comercio": None,
+            "total": None,
+            "fecha": None,
+            "ubicacion": None,
+            "latitud": None,
+            "longitud": None,
+            "categoria": "Varios",
+            "detalles": "Fallback IA"
+        })
 
 # =======================================================
-# 7. UI PRINCIPAL
+# 7. UI
 # =======================================================
 st.title("🧠 SmartReceipt – Business Ready")
 
-tab1, tab2, tab3 = st.tabs(["📸 Nuevo Ticket", "📊 Dashboard", "💬 Chat IA"])
+tab1, tab2 = st.tabs(["📸 Nuevo Ticket", "📊 Dashboard"])
 
 # -------------------------------------------------------
-# TAB 1 – NUEVO TICKET
+# TAB 1
 # -------------------------------------------------------
 with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
-        archivo = st.file_uploader("Sube tu ticket", type=["jpg","png","jpeg"])
+        archivo = st.file_uploader("Sube tu ticket", type=["jpg", "png", "jpeg"])
+
         if archivo:
-            img = Image.open(archivo)
-            img_proc = procesar_imagen_opencv(img)
-            st.image(img_proc, use_container_width=True)
+            img_original = Image.open(archivo).convert("RGB")
+            img_proc = procesar_imagen_opencv(img_original)
+            st.image(img_proc, caption="Procesada", use_container_width=True)
 
-            if st.button("🧠 Escanear", disabled=st.session_state["procesando"]):
-                st.session_state["procesando"] = True
-
+            if st.button("🧠 Escanear"):
                 cache = cargar_cache()
-                h = hash_imagen(img)
+                h = hash_imagen(img_proc)
 
                 if h in cache:
                     st.session_state["temp"] = cache[h]
-                    st.toast("Leído desde caché ⚡")
+                    st.toast("⚡ Desde caché")
                 else:
-                    with st.spinner("Analizando con IA..."):
+                    with st.spinner("Analizando..."):
                         raw = analizar_ticket(img_proc)
-                        clean = raw.replace("```json","").replace("```","").strip()
-                        if "{" in clean:
-                            clean = clean[clean.find("{"):clean.rfind("}")+1]
+                        clean = raw.replace("```json", "").replace("```", "").strip()
+                        clean = clean[clean.find("{"):clean.rfind("}") + 1]
                         data = json.loads(clean)
+
                         cache[h] = data
                         guardar_cache(cache)
                         st.session_state["temp"] = data
-
-                st.session_state["procesando"] = False
 
     with col2:
         if "temp" in st.session_state:
             d = st.session_state["temp"]
 
-            vc = normalizar_comercio(d.get("comercio"))
-            vm = d.get("total") or 0.0
-            vf = d.get("fecha") or pd.Timestamp.today().strftime("%d/%m/%Y")
-            vu = d.get("ubicacion") or vc
+            comercio = normalizar_comercio(d.get("comercio"))
+            monto = float(d.get("total") or 0)
+            fecha = d.get("fecha") or pd.Timestamp.today().strftime("%d/%m/%Y")
+            ubicacion = d.get("ubicacion") or comercio
 
-            try: vm = float(vm)
-            except: vm = 0.0
-
-            with st.form("save"):
-                vc = st.text_input("Comercio", vc)
-                vm = st.number_input("Monto", value=float(vm))
-                vf = st.text_input("Fecha", vf)
-                vcat = st.selectbox("Categoría", LISTA_CATEGORIAS)
-                vu = st.text_input("Ubicación", vu)
-                vdet = st.text_input("Detalles", d.get("detalles",""))
+            with st.form("guardar"):
+                comercio = st.text_input("Comercio", comercio)
+                monto = st.number_input("Monto", value=monto)
+                fecha = st.text_input("Fecha", fecha)
+                categoria = st.selectbox("Categoría", LISTA_CATEGORIAS)
+                ubicacion = st.text_input("Ubicación", ubicacion)
+                detalles = st.text_input("Detalles", d.get("detalles", ""))
 
                 if st.form_submit_button("💾 Guardar"):
                     st.session_state["gastos"].append({
-                        "Fecha": vf,
-                        "Comercio": vc,
-                        "Monto": vm,
-                        "Ubicación": vu,
-                        "lat": d.get("latitud") or 0,
-                        "lon": d.get("longitud") or 0,
-                        "Categoría": vcat,
-                        "Detalles": vdet
+                        "Fecha": fecha,
+                        "Comercio": comercio,
+                        "Monto": monto,
+                        "Ubicación": ubicacion,
+                        "Categoría": categoria,
+                        "Detalles": detalles
                     })
                     pd.DataFrame(st.session_state["gastos"]).to_csv(ARCHIVO_DB, index=False)
                     del st.session_state["temp"]
@@ -249,7 +229,7 @@ with tab1:
                     st.rerun()
 
 # -------------------------------------------------------
-# TAB 2 – DASHBOARD
+# TAB 2
 # -------------------------------------------------------
 with tab2:
     if st.session_state["gastos"]:
@@ -259,31 +239,10 @@ with tab2:
         st.altair_chart(
             alt.Chart(df).mark_arc(innerRadius=50).encode(
                 theta="Monto", color="Categoría"
-            ), use_container_width=True
+            ),
+            use_container_width=True
         )
         st.dataframe(df, use_container_width=True)
     else:
         st.info("Sin datos aún")
 
-# -------------------------------------------------------
-# TAB 3 – CHAT IA
-# -------------------------------------------------------
-with tab3:
-    for m in st.session_state["chat_history"]:
-        with st.chat_message(m["role"]):
-            st.markdown(m["content"])
-
-    q = st.chat_input("Pregunta sobre tus gastos")
-    if q:
-        st.session_state["chat_history"].append({"role":"user","content":q})
-        with st.chat_message("assistant"):
-            if not st.session_state["gastos"]:
-                ans = "No hay datos todavía."
-            else:
-                model = genai.GenerativeModel(obtener_modelo_valido())
-                csv = pd.DataFrame(st.session_state["gastos"]).to_csv(index=False)
-                ans = model.generate_content(
-                    f"Analiza estos datos:\n{csv}\nPregunta:{q}"
-                ).text
-            st.markdown(ans)
-        st.session_state["chat_history"].append({"role":"assistant","content":ans})
