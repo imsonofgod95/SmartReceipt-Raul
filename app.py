@@ -63,7 +63,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # =======================================================
-# 2. CONEXIONES (SHEETS + IA)
+# 2. CONEXIONES (SHEETS + IA) - CON AUTO-REPARACIÓN 🛠️
 # =======================================================
 
 # A) Configurar Gemini
@@ -75,7 +75,7 @@ try:
         st.stop()
 except: st.stop()
 
-# B) Configurar Sheets
+# B) Configurar Sheets y Reparar Encabezados
 def conectar_google_sheets():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
@@ -85,7 +85,16 @@ def conectar_google_sheets():
                 creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
             client = gspread.authorize(creds)
-            return client.open("SmartReceipt DB").sheet1
+            hoja = client.open("SmartReceipt DB").sheet1
+            
+            # --- AUTO-REPARACIÓN DE ENCABEZADOS ---
+            # Verificamos si la hoja está vacía. Si sí, escribimos los títulos.
+            if not hoja.get_all_values():
+                encabezados = ["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"]
+                hoja.append_row(encabezados)
+                st.toast("Base de datos inicializada correctamente", icon="🏗️")
+            
+            return hoja
         return None
     except Exception as e:
         st.error(f"Error DB: {e}")
@@ -95,21 +104,23 @@ def conectar_google_sheets():
 try:
     hoja_db = conectar_google_sheets()
     if hoja_db:
+        # Usamos get_all_records que ahora funcionará porque GARANTIZAMOS los encabezados
         raw_data = hoja_db.get_all_records()
         df_full = pd.DataFrame(raw_data)
         
         if df_full.empty:
-            # AHORA INCLUIMOS LA COLUMNA 'USUARIO'
             df_full = pd.DataFrame(columns=["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"])
         
         # FILTRO DE SEGURIDAD: Solo mostramos los datos del usuario logueado
         if "Usuario" in df_full.columns:
             df_gastos = df_full[df_full["Usuario"] == st.session_state.username].copy()
         else:
-            df_gastos = pd.DataFrame() # Si la estructura es vieja, no mostramos nada para evitar errores
+            # Si faltan columnas críticas, forzamos un dataframe vacío seguro
+            df_gastos = pd.DataFrame(columns=["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"])
     else:
         df_gastos = pd.DataFrame()
-except:
+except Exception as e:
+    # st.error(f"Error cargando datos: {e}") 
     df_gastos = pd.DataFrame()
 
 if 'gastos' not in st.session_state:
@@ -201,7 +212,7 @@ with st.sidebar:
 # Preparar datos filtrados
 df = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
-if not df.empty:
+if not df.empty and "Monto" in df.columns: # Check extra para evitar errores
     if 'lat' in df.columns: df['lat'] = pd.to_numeric(df['lat'], errors='coerce').fillna(0.0)
     if 'lon' in df.columns: df['lon'] = pd.to_numeric(df['lon'], errors='coerce').fillna(0.0)
     if 'Monto' in df.columns: df['Monto'] = pd.to_numeric(df['Monto'], errors='coerce').fillna(0.0)
