@@ -148,8 +148,14 @@ def analizar_ticket(imagen_pil):
     except Exception as e: return f"Error: {e}", modelo
 
 def consultar_chat_financiero(pregunta, datos_df):
+    # --- CORRECCIÓN APLICADA AQUÍ: Búsqueda dinámica de modelo para el chat ---
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        mods = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        modelo = next((m for m in mods if 'flash' in m and '1.5' in m), mods[0] if mods else "gemini-1.5-flash")
+    except: modelo = "gemini-1.5-flash"
+    
+    try:
+        model = genai.GenerativeModel(modelo)
         datos_csv = datos_df.to_csv(index=False)
         prompt = f"Eres Asistente Financiero. Datos de {st.session_state.username}:\n---\n{datos_csv}\n---\nPregunta: {pregunta}"
         response = model.generate_content(prompt)
@@ -165,7 +171,7 @@ with st.sidebar:
     # BOTÓN DE SINCRONIZACIÓN FORZADA (Por si acaso)
     if st.button("🔄 Forzar Sincronización Nube"):
         st.cache_data.clear()
-        del st.session_state['gastos'] # Forzamos recarga en el próximo run
+        if 'gastos' in st.session_state: del st.session_state['gastos'] 
         st.rerun()
         
     if st.button("Cerrar Sesión"):
