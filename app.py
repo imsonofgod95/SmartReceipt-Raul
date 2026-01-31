@@ -222,10 +222,12 @@ def consultar_chat_financiero(pregunta, datos_df):
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
 
-# Preprocesamiento de datos
+# Preprocesamiento de datos GLOBAL (Aquí arreglamos los tipos antes de cualquier filtro)
 if not df_local.empty:
     for c in ['lat','lon','Monto']:
         if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
+    
+    # Crear auxiliares de fecha
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
@@ -263,7 +265,7 @@ with st.sidebar:
         if sel_com: df_filtrado = df_filtrado[df_filtrado['Comercio'].isin(sel_com)]
     
     st.divider()
-    # SECCIÓN ARCO EN SIDEBAR (REQUISITO LEGAL)
+    # SECCIÓN ARCO EN SIDEBAR
     with st.expander("🛡️ Derechos ARCO"):
         st.caption("Para ejercer sus derechos de Acceso, Rectificación, Cancelación u Oposición, contacte a:")
         st.markdown("**legal@smartreceipt.app**")
@@ -368,12 +370,22 @@ with tab_dashboard:
                 )
                 st.altair_chart(line, use_container_width=True)
 
+        # CORRECCIÓN DEL MAPA (Aquí estaba el fallo anterior)
         map_data = df_filtrado[(df_filtrado['lat']!=0)]
         if not map_data.empty:
             st.markdown("##### 🗺️ Mapa de Operaciones")
-            st.pydeck_chart(pdk.Deck(initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
-                layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[15, 23, 42, 200]', get_radius=200, pickable=True)],
-                tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}))
+            st.pydeck_chart(pdk.Deck(
+                initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
+                layers=[pdk.Layer(
+                    "ScatterplotLayer",
+                    data=map_data,
+                    get_position='[lon, lat]',
+                    get_color=[15, 23, 42, 200],  # Lista de enteros (CORREGIDO)
+                    get_radius=200,
+                    pickable=True
+                )],
+                tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
+            ))
                 
         with st.expander("📂 Exportar Datos"):
             st.dataframe(df_filtrado, use_container_width=True)
