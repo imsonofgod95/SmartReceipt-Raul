@@ -222,12 +222,10 @@ def consultar_chat_financiero(pregunta, datos_df):
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
 
-# Preprocesamiento de datos GLOBAL (Aquí arreglamos los tipos antes de cualquier filtro)
+# Preprocesamiento de datos GLOBAL (Limpieza Crítica)
 if not df_local.empty:
     for c in ['lat','lon','Monto']:
         if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
-    
-    # Crear auxiliares de fecha
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
@@ -370,17 +368,18 @@ with tab_dashboard:
                 )
                 st.altair_chart(line, use_container_width=True)
 
-        # CORRECCIÓN DEL MAPA (Aquí estaba el fallo anterior)
+        # MAPA REPARADO (V23.1)
         map_data = df_filtrado[(df_filtrado['lat']!=0)]
         if not map_data.empty:
             st.markdown("##### 🗺️ Mapa de Operaciones")
             st.pydeck_chart(pdk.Deck(
+                map_style=None, # SOLUCIÓN: Usar estilo base sin token
                 initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
                 layers=[pdk.Layer(
                     "ScatterplotLayer",
                     data=map_data,
                     get_position='[lon, lat]',
-                    get_color=[15, 23, 42, 200],  # Lista de enteros (CORREGIDO)
+                    get_color=[15, 23, 42, 200], # Color fijo en lista (Azul oscuro)
                     get_radius=200,
                     pickable=True
                 )],
