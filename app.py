@@ -14,9 +14,39 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 # =======================================================
-# 1. CONFIGURACIÓN Y ESTILOS (CSS) 🎨
+# 1. TEXTOS LEGALES ROBUSTOS (COMPLIANCE ARCO) ⚖️
 # =======================================================
-st.set_page_config(page_title="SmartReceipt Enterprise", layout="wide", page_icon="💳")
+AVISO_PRIVACIDAD = """
+**AVISO DE PRIVACIDAD INTEGRAL**
+
+**1. RESPONSABLE:** SmartReceipt Inc., con domicilio digital en la nube, es responsable del tratamiento de sus datos personales.
+
+**2. DATOS RECABADOS:** Para la prestación del servicio, recabamos: Datos de identificación (Usuario), Datos patrimoniales (Tickets de consumo, montos, comercios) y Datos de geolocalización.
+
+**3. FINALIDADES:**
+* **Primarias:** Gestión de gastos, visualización de dashboard y almacenamiento de historial.
+* **Secundarias (Negocio):** Análisis estadístico de mercado mediante datos **disociados y anónimos** (Big Data).
+
+**4. DERECHOS ARCO:** Usted tiene derecho a Acceder, Rectificar, Cancelar u Oponerse al tratamiento de sus datos.
+* Para ejercer estos derechos, envíe una solicitud a: **legal@smartreceipt.app**
+* Su solicitud será atendida en un plazo máximo de 20 días hábiles.
+
+**5. TRANSFERENCIAS:** Sus datos financieros personales NO se venden a terceros. Solo se comercializan insights estadísticos agregados que no permiten su identificación personal.
+"""
+
+TERMINOS_CONDICIONES = """
+**TÉRMINOS Y CONDICIONES DE USO (SaaS)**
+
+1. **LICENCIA DE USO:** Se otorga una licencia no exclusiva e intransferible para usar el software.
+2. **EXENCIÓN DE RESPONSABILIDAD (IA):** El usuario reconoce que el procesamiento es realizado por Inteligencia Artificial (Google Gemini). SmartReceipt no garantiza una precisión del 100% y **se deslinda de responsabilidad por errores contables o fiscales** derivados de la falta de verificación humana por parte del usuario.
+3. **PROPIEDAD INTELECTUAL:** El software es propiedad de SmartReceipt. Los tickets son propiedad del usuario.
+4. **CONSENTIMIENTO DE DATOS:** Al usar la app, el usuario autoriza el uso de su información de consumo para la generación de reportes macroeconómicos anónimos.
+"""
+
+# =======================================================
+# 2. CONFIGURACIÓN Y ESTILOS UI 🎨
+# =======================================================
+st.set_page_config(page_title="SmartReceipt Enterprise", layout="wide", page_icon="⚖️")
 
 st.markdown("""
     <style>
@@ -24,7 +54,7 @@ st.markdown("""
     html, body, [class*="css"] {font-family: 'Inter', sans-serif;}
     
     .main-header {
-        background: linear-gradient(90deg, #1E3A8A 0%, #3B82F6 100%);
+        background: linear-gradient(90deg, #0F172A 0%, #334155 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
@@ -32,82 +62,71 @@ st.markdown("""
         padding-bottom: 10px;
     }
     .metric-card {
-        background-color: #F8FAFC;
-        border: 1px solid #E2E8F0;
-        border-radius: 10px;
-        padding: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         text-align: center;
-        transition: transform 0.2s;
     }
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    }
+    .metric-value {font-size: 2rem; font-weight: 700; color: #0F172A;}
+    .metric-label {font-size: 0.875rem; color: #64748B; font-weight: 500;}
+    
     .stButton > button {
-        border-radius: 8px; 
-        font-weight: 600;
+        border-radius: 8px; font-weight: 600; border: none;
+        transition: all 0.2s;
     }
-    .footer {
-        position: fixed; left: 0; bottom: 0; width: 100%; 
-        background-color: #ffffff; border-top: 1px solid #e5e7eb; 
-        color: #6b7280; text-align: center; padding: 10px; font-size: 12px; z-index: 999;
-    }
-    [data-testid="stSidebar"] {background-color: #F3F4F6; border-right: 1px solid #E5E7EB;}
+    .stButton > button:hover {transform: translateY(-2px);}
+    
+    [data-testid="stSidebar"] {background-color: #F8FAFC; border-right: 1px solid #E2E8F0;}
     </style>
 """, unsafe_allow_html=True)
 
-# TEXTOS LEGALES (CORREGIDO: AHORA SÍ APARECEN)
-TERMINOS_CONDICIONES = """
-**TÉRMINOS Y CONDICIONES DE USO - SMARTRECEIPT**
-1. **ACEPTACIÓN:** Al acceder, acepta estos términos.
-2. **NATURALEZA:** Herramienta de IA sujeta a verificación humana.
-3. **LICENCIA DE DATOS:** Usted conserva la propiedad de sus tickets. Otorga a SmartReceipt licencia para usar datos de forma **anónima y agregada** para análisis de mercado.
-4. **PRIVACIDAD:** Sus datos de contacto son confidenciales.
-5. **RESPONSABILIDAD:** No nos hacemos responsables por errores contables derivados del uso de la herramienta.
-"""
-
 # =======================================================
-# 2. LOGIN Y SEGURIDAD 🔐
+# 3. LOGIN BLINDADO 🔐
 # =======================================================
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "username" not in st.session_state: st.session_state.username = ""
 
 def login():
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
+    c1, c2, c3 = st.columns([1,2,1])
+    with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>🏢 SmartReceipt <span style='font-size: 0.5em; color: #64748B;'>Enterprise</span></h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #0F172A;'>🏢 SmartReceipt</h1>", unsafe_allow_html=True)
         
         with st.container(border=True):
-            st.markdown("### Iniciar Sesión")
+            st.markdown("### Acceso Seguro")
             with st.form("login_form"):
-                usuario = st.text_input("Usuario", placeholder="ej. admin")
+                usuario = st.text_input("Usuario Corporativo")
                 contra = st.text_input("Contraseña", type="password")
                 
                 st.markdown("---")
-                # AQUÍ ESTÁN LOS T&C RECUPERADOS
-                with st.expander("📄 Ver Términos y Condiciones"):
+                st.caption("Documentación Legal Obligatoria:")
+                with st.expander("📜 Leer Aviso de Privacidad (ARCO)"):
+                    st.markdown(AVISO_PRIVACIDAD)
+                with st.expander("⚖️ Leer Términos y Condiciones"):
                     st.markdown(TERMINOS_CONDICIONES)
                 
-                acepto = st.checkbox("He leído y acepto los Términos.")
+                check_privacidad = st.checkbox("He leído el Aviso de Privacidad.")
+                check_terminos = st.checkbox("Acepto los Términos y Condiciones.")
                 
-                if st.form_submit_button("Acceder", type="primary", use_container_width=True):
-                    if not acepto: st.warning("⚠️ Debe aceptar los términos.")
+                if st.form_submit_button("Ingresar al Sistema", type="primary", use_container_width=True):
+                    if not (check_privacidad and check_terminos):
+                        st.error("🛑 Para cumplir con la normativa legal, debe aceptar ambos documentos.")
                     elif "usuarios" in st.secrets and usuario in st.secrets["usuarios"]:
                         if st.secrets["usuarios"][usuario] == contra:
                             st.session_state.logged_in = True
                             st.session_state.username = usuario
                             st.rerun()
                         else: st.error("Credenciales inválidas")
-                    else: st.error("Usuario no encontrado")
+                    else: st.error("Usuario no registrado")
 
 if not st.session_state.logged_in:
     login()
     st.stop()
 
 # =======================================================
-# 3. BACKEND 🧠
+# 4. BACKEND & CONEXIONES 🧠
 # =======================================================
 try:
     if "GOOGLE_API_KEY" in st.secrets:
@@ -127,7 +146,7 @@ def get_google_sheet():
         return None
     except: return None
 
-# Inicialización segura
+# Inicialización
 if 'gastos' not in st.session_state or not st.session_state['gastos']:
     hoja = get_google_sheet()
     if hoja:
@@ -156,7 +175,7 @@ LISTA_CATEGORIAS = [
 ]
 
 # =======================================================
-# 4. CORE IA & PROCESAMIENTO
+# 5. FUNCIONES CORE (IA & VISIÓN)
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
     img_np = np.array(imagen_pil)
@@ -198,100 +217,89 @@ def consultar_chat_financiero(pregunta, datos_df):
     except Exception as e: return f"Error Chat: {e}"
 
 # =======================================================
-# 5. DASHBOARD & FILTROS AVANZADOS 📊
+# 6. DASHBOARD & SIDEBAR PROFESIONAL
 # =======================================================
-
-# Preparación de datos base
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
 
-# Limpieza y conversión de tipos para el filtrado
+# Preprocesamiento de datos
 if not df_local.empty:
     for c in ['lat','lon','Monto']:
         if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
-    
-    # Crear columna auxiliar de MES para el filtro
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
-    df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m') # Formato AAAA-MM
+    df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
 with st.sidebar:
     st.markdown(f"""
-    <div style="background-color: #E0E7FF; padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px;">
-        <h3 style="margin:0; color: #1E3A8A;">👤 {st.session_state.username}</h3>
+    <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; margin-bottom: 20px;">
+        <h3 style="margin:0; color: #0F172A;">👤 {st.session_state.username}</h3>
+        <p style="color: green; font-size: 10px;">● Online</p>
     </div>
     """, unsafe_allow_html=True)
     
-    if st.button("🔄 Sincronizar", use_container_width=True):
+    if st.button("🔄 Sincronizar Datos", use_container_width=True):
         st.cache_data.clear()
         if 'gastos' in st.session_state: del st.session_state['gastos'] 
         st.rerun()
     
     st.divider()
-    st.header("🌪️ Filtros Avanzados")
+    st.markdown("### 🎯 Filtros de Datos")
     
-    # --- MOTOR DE FILTROS 4.0 ---
     if not df_local.empty:
-        # 1. Filtro Mes
+        # Filtros en Cascada
         opts_mes = sorted([x for x in df_local['Mes_Año'].unique() if x is not None and str(x) != 'nan'], reverse=True)
-        sel_mes = st.multiselect("📅 Mes", opts_mes)
+        sel_mes = st.multiselect("📅 Periodo", opts_mes)
         
-        # 2. Filtro Categoría
         opts_cat = sorted([str(x) for x in df_local['Categoría'].unique() if x])
         sel_cat = st.multiselect("🏷️ Categoría", opts_cat)
         
-        # 3. Filtro Comercio (Nuevo)
         opts_com = sorted([str(x) for x in df_local['Comercio'].unique() if x])
         sel_com = st.multiselect("🏪 Comercio", opts_com)
         
-        # 4. Filtro Ubicación/Zona (Nuevo)
-        opts_ubi = sorted([str(x) for x in df_local['Ubicación'].unique() if x])
-        sel_ubi = st.multiselect("📍 Zona", opts_ubi)
-        
-        # APLICACIÓN DE FILTROS (Lógica AND)
+        # Lógica de Filtrado
         df_filtrado = df_local.copy()
         if sel_mes: df_filtrado = df_filtrado[df_filtrado['Mes_Año'].isin(sel_mes)]
         if sel_cat: df_filtrado = df_filtrado[df_filtrado['Categoría'].isin(sel_cat)]
         if sel_com: df_filtrado = df_filtrado[df_filtrado['Comercio'].isin(sel_com)]
-        if sel_ubi: df_filtrado = df_filtrado[df_filtrado['Ubicación'].isin(sel_ubi)]
+    
+    st.divider()
+    # SECCIÓN ARCO EN SIDEBAR (REQUISITO LEGAL)
+    with st.expander("🛡️ Derechos ARCO"):
+        st.caption("Para ejercer sus derechos de Acceso, Rectificación, Cancelación u Oposición, contacte a:")
+        st.markdown("**legal@smartreceipt.app**")
+        st.caption("Referencia: Compliance LFPDPPP")
         
-        st.caption(f"Mostrando {len(df_filtrado)} de {len(df_local)} tickets")
-
-    st.markdown("---")
     if st.button("Cerrar Sesión", use_container_width=True):
         st.session_state.logged_in = False
         st.rerun()
 
-# --- MAIN LAYOUT ---
-st.markdown('<h1 class="main-header">SmartReceipt <span style="font-weight:300;">Analytics</span></h1>', unsafe_allow_html=True)
+# --- MAIN CONTENT ---
+st.markdown('<h1 class="main-header">SmartReceipt <span style="font-weight:300;">Enterprise</span></h1>', unsafe_allow_html=True)
 
 if not df_filtrado.empty:
     m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.markdown(f'<div class="metric-card"><h3>Total</h3><h2 style="color:#1E3A8A">${df_filtrado["Monto"].sum():,.0f}</h2></div>', unsafe_allow_html=True)
-    with m2:
-        st.markdown(f'<div class="metric-card"><h3>Tickets</h3><h2 style="color:#059669">{len(df_filtrado)}</h2></div>', unsafe_allow_html=True)
-    with m3:
-        st.markdown(f'<div class="metric-card"><h3>Promedio</h3><h2 style="color:#D97706">${df_filtrado["Monto"].mean():,.0f}</h2></div>', unsafe_allow_html=True)
+    with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">Gasto Total</div><div class="metric-value" style="color:#0F172A">${df_filtrado["Monto"].sum():,.0f}</div></div>', unsafe_allow_html=True)
+    with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">Transacciones</div><div class="metric-value" style="color:#3B82F6">{len(df_filtrado)}</div></div>', unsafe_allow_html=True)
+    with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">Ticket Promedio</div><div class="metric-value" style="color:#F59E0B">${df_filtrado["Monto"].mean():,.0f}</div></div>', unsafe_allow_html=True)
     with m4:
-        # Categoría Top
-        top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "N/A"
-        st.markdown(f'<div class="metric-card"><h3>Top Gasto</h3><h3 style="color:#DC2626">{top_cat}</h3></div>', unsafe_allow_html=True)
+        top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "-"
+        st.markdown(f'<div class="metric-card"><div class="metric-label">Mayor Gasto</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
 # TABS
-tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 BI Dashboard", "💬 AI Advisor"])
+tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Dashboard BI", "💬 AI Assistant"])
 
 with tab_nuevo:
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
-        st.markdown("#### Carga de Comprobante")
-        archivo = st.file_uploader("Subir imagen", type=["jpg","png","jpeg"], label_visibility="collapsed")
+        st.markdown("#### 1. Digitalización")
+        archivo = st.file_uploader("Subir comprobante", type=["jpg","png","jpeg"], label_visibility="collapsed")
         if archivo:
             img = Image.open(archivo)
             img_proc = procesar_imagen_opencv(img)
-            st.image(img_proc, caption="Procesada", use_container_width=True)
-            if st.button("⚡ Extraer Datos", type="primary"):
-                with st.spinner("AI procesando..."):
+            st.image(img_proc, caption="Procesada para OCR", use_container_width=True)
+            if st.button("⚡ Analizar con Gemini AI", type="primary"):
+                with st.spinner("Extrayendo metadatos..."):
                     txt, mod = analizar_ticket(img_proc)
                     if "Error" in txt: st.error(txt)
                     else:
@@ -299,30 +307,30 @@ with tab_nuevo:
                             match = re.search(r'\{.*\}', txt, re.DOTALL)
                             if match:
                                 st.session_state['temp_data'] = json.loads(match.group())
-                                st.toast("Datos listos", icon="✅")
-                        except: st.error("Error formato")
+                                st.toast("Lectura completada", icon="✅")
+                        except: st.error("Error de formato")
 
     with col2:
-        st.markdown("#### Validación")
+        st.markdown("#### 2. Validación Fiscal")
         if 'temp_data' in st.session_state:
             data = st.session_state['temp_data']
             with st.container(border=True):
                 c1,c2 = st.columns(2)
                 vc = c1.text_input("Comercio", data.get("comercio",""))
-                vm = c2.number_input("Total", value=float(str(data.get("total",0)).replace("$","").replace(",","")))
+                vm = c2.number_input("Monto Total ($)", value=float(str(data.get("total",0)).replace("$","").replace(",","")))
                 c3,c4 = st.columns(2)
                 vf = c3.text_input("Fecha", data.get("fecha",""))
                 cat_def = data.get("categoria","Varios")
                 idx = LISTA_CATEGORIAS.index(cat_def) if cat_def in LISTA_CATEGORIAS else 19
                 vcat = c4.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
                 
-                with st.expander("📍 Detalles"):
-                    vu = st.text_input("Ubicación", data.get("ubicacion",""))
-                    vdet = st.text_input("Notas", data.get("detalles",""))
+                with st.expander("📍 Geolocalización y Notas"):
+                    vu = st.text_input("Sucursal", data.get("ubicacion",""))
+                    vdet = st.text_input("Concepto", data.get("detalles",""))
                     vlat = float(data.get("latitud", 0.0))
                     vlon = float(data.get("longitud", 0.0))
 
-                if st.button("💾 Registrar Gasto", type="primary", use_container_width=True):
+                if st.button("💾 Guardar Transacción", type="primary", use_container_width=True):
                     nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
                     st.session_state['gastos'].append(nuevo)
                     hoja = get_google_sheet()
@@ -334,44 +342,48 @@ with tab_nuevo:
 
 with tab_dashboard:
     if not df_filtrado.empty:
-        # Gráfica de Barras por Comercio (Nuevo valor agregado)
-        st.markdown("##### 🏪 Top Comercios")
-        chart_com = alt.Chart(df_filtrado).mark_bar().encode(
-            x=alt.X('Monto', title='Gasto Total'),
+        st.markdown("##### 🏢 Gasto por Comercio")
+        chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
+            x=alt.X('Monto', title='Monto Total'),
             y=alt.Y('Comercio', sort='-x'),
             color=alt.Color('Monto', scale={'scheme': 'blues'}),
-            tooltip=['Comercio', 'Monto']
+            tooltip=['Comercio', 'Monto', 'Fecha']
         ).properties(height=300)
-        st.altair_chart(chart_com, use_container_width=True)
+        st.altair_chart(chart_bar, use_container_width=True)
         
         col_g1, col_g2 = st.columns(2)
         with col_g1:
             st.markdown("##### Distribución")
-            st.altair_chart(alt.Chart(df_filtrado).mark_arc(innerRadius=60).encode(theta='Monto', color=alt.Color('Categoría', scale={'scheme': 'tableau10'}), tooltip=['Categoría','Monto']), use_container_width=True)
+            base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
+            pie = base.mark_arc(innerRadius=60).encode(
+                color=alt.Color("Categoría", scale={'scheme': 'tableau10'}),
+                tooltip=["Categoría", "Monto"]
+            )
+            st.altair_chart(pie, use_container_width=True)
         with col_g2:
-            st.markdown("##### Tendencia Temporal")
-            # Gráfica de Línea de tiempo si hay fechas válidas
+            st.markdown("##### Historial Temporal")
             if 'Fecha_dt' in df_filtrado.columns:
-                line = alt.Chart(df_filtrado).mark_line(point=True).encode(
+                line = alt.Chart(df_filtrado).mark_line(point=True, interpolate='monotone').encode(
                     x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto', 'Comercio']
                 )
                 st.altair_chart(line, use_container_width=True)
 
         map_data = df_filtrado[(df_filtrado['lat']!=0)]
         if not map_data.empty:
-            st.markdown("##### 🗺️ Mapa de Calor")
+            st.markdown("##### 🗺️ Mapa de Operaciones")
             st.pydeck_chart(pdk.Deck(initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
-                layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[37, 99, 235, 180]', get_radius=200, pickable=True)],
+                layers=[pdk.Layer("ScatterplotLayer", data=map_data, get_position='[lon, lat]', get_color='[15, 23, 42, 200]', get_radius=200, pickable=True)],
                 tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}))
                 
-        with st.expander("📂 Ver Datos Crudos"):
+        with st.expander("📂 Exportar Datos"):
             st.dataframe(df_filtrado, use_container_width=True)
-    else: st.info("No hay datos que coincidan con los filtros.")
+    else: st.info("No hay datos disponibles para los filtros seleccionados.")
 
 with tab_chat:
+    st.caption("Asistente financiero potenciado por Gemini 1.5. Pregunta sobre patrones de gasto.")
     for m in st.session_state['chat_history']:
         with st.chat_message(m["role"]): st.markdown(m["content"])
-    if q := st.chat_input("Pregunta a la IA..."):
+    if q := st.chat_input("Ej: ¿Cuál fue mi gasto más alto en Restaurantes?"):
         with st.chat_message("user"): st.markdown(q)
         st.session_state['chat_history'].append({"role":"user", "content":q})
         if df_filtrado.empty: r = "Sin datos."
@@ -382,7 +394,8 @@ with tab_chat:
 
 # FOOTER
 st.markdown("""
-<div class="footer">
-    SmartReceipt Inc. © 2026 | Enterprise Edition
+<div style="text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;">
+    SmartReceipt Inc. © 2026 | Cumplimiento LFPDPPP | 
+    <a href="#" style="color: #64748b;">Privacidad</a>
 </div>
 """, unsafe_allow_html=True)
