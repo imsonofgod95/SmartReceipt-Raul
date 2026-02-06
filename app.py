@@ -202,22 +202,23 @@ def analizar_ticket(imagen_pil):
     try:
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(LISTA_CATEGORIAS)
+        
+        # --- PROMPT V28: MEJORADO PARA MANUSCRITOS ---
         prompt = f"""
-        Analiza la imagen. Puede ser un TICKET DE COMPRA o un RECIBO DE SERVICIOS (Luz, Agua, Gas, Predial).
+        Analiza la imagen. Puede ser:
+        1. TICKET DE COMPRA (Impreso)
+        2. RECIBO DE SERVICIOS (Luz, Agua, Gas, Predial)
+        3. NOTA DE REMISIÓN (MANUSCRITA / A MANO ALZADA)
         
-        SI ES UN RECIBO DE SERVICIOS:
-        - Comercio: Nombre del proveedor (CFE, Telmex, Siapa, Tesorería, etc).
-        - Total: Busca el "Total a Pagar".
-        - Fecha: Fecha de emisión.
-        - Detalles: Busca "Fecha Límite de Pago" o "Periodo Facturado".
-        - Categoría: "Servicios (Luz/Agua/Internet)" o "Impuestos y Predial".
+        INSTRUCCIONES CLAVE:
+        - Si es MANUSCRITO: Haz tu mejor esfuerzo OCR. Si la fecha dice "Noviembre", conviértelo a formato numérico (DD/MM/AAAA).
+        - Comercio: Si es nota de remisión genérica, busca el nombre del negocio o la persona que firma.
+        - Total: Busca el "Total", "Neto" o la cifra final.
+        - Fecha: Formato DD/MM/AAAA obligatorio.
         
-        SI ES UN TICKET NORMAL:
-        - Extrae datos estándar.
+        CATEGORÍAS DISPONIBLES: [{cats_str}]
         
-        CATEGORÍA ELEGIDA DE: [{cats_str}]
-        
-        JSON: {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Sucursal", "latitud": 19.0000, "longitud": -99.0000, "categoria": "Texto", "detalles": "Texto"}}
+        JSON OBLIGATORIO: {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Sucursal o Ciudad", "latitud": 0.0, "longitud": 0.0, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, modelo
@@ -236,7 +237,6 @@ def consultar_chat_financiero(pregunta, datos_df):
         return response.text
     except Exception as e: return f"Error Chat: {e}"
 
-# --- FUNCIÓN DE SEGURIDAD PARA NÚMEROS ---
 def safe_float(val):
     try:
         if val is None: return 0.0
@@ -314,7 +314,7 @@ tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Dashboa
 with tab_nuevo:
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
-        st.markdown("#### 1. Digitalización (Tickets y Recibos)")
+        st.markdown("#### 1. Digitalización (Universal)")
         archivo = st.file_uploader("Subir comprobante", type=["jpg","png","jpeg"], label_visibility="collapsed")
         if archivo:
             img = Image.open(archivo)
@@ -339,7 +339,6 @@ with tab_nuevo:
             with st.container(border=True):
                 c1,c2 = st.columns(2)
                 vc = c1.text_input("Comercio / Proveedor", data.get("comercio",""))
-                # Corrección de seguridad en Monto
                 try:
                     val_monto = float(str(data.get("total",0)).replace("$","").replace(",",""))
                 except: val_monto = 0.0
@@ -349,7 +348,6 @@ with tab_nuevo:
                 vf = c3.text_input("Fecha", data.get("fecha",""))
                 vh = c4.text_input("Hora", data.get("hora", "00:00"))
                 
-                # CORRECCIÓN DE CATEGORÍA
                 cat_def = data.get("categoria","Varios")
                 if "Servicios" in cat_def or "Luz" in cat_def or "Agua" in cat_def or "CFE" in cat_def or "Gas" in cat_def:
                      idx = LISTA_CATEGORIAS.index("Servicios (Luz/Agua/Internet)")
@@ -365,8 +363,6 @@ with tab_nuevo:
                 with st.expander("📍 Geolocalización y Notas"):
                     vu = st.text_input("Sucursal", data.get("ubicacion",""))
                     vdet = st.text_input("Concepto / Periodo", data.get("detalles",""))
-                    
-                    # CORRECCIÓN DEL ERROR TYPE ERROR (AQUI ESTÁ LA SOLUCIÓN)
                     vlat = safe_float(data.get("latitud"))
                     vlon = safe_float(data.get("longitud"))
 
