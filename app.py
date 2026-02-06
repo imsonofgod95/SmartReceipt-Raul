@@ -203,7 +203,6 @@ def analizar_ticket(imagen_pil):
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(LISTA_CATEGORIAS)
         
-        # --- PROMPT V28: MEJORADO PARA MANUSCRITOS ---
         prompt = f"""
         Analiza la imagen. Puede ser:
         1. TICKET DE COMPRA (Impreso)
@@ -331,6 +330,23 @@ with tab_nuevo:
                                 st.session_state['temp_data'] = json.loads(match.group())
                                 st.toast("Lectura completada", icon="✅")
                         except: st.error("Error de formato")
+        
+        # --- AQUÍ ESTÁ EL BOTÓN PARA GASTOS MANUALES (TACOS, PROPINAS) ---
+        st.markdown("---")
+        st.info("¿Gasto sin comprobante? (Tacos, Propinas, etc.)")
+        if st.button("✍️ Captura Manual", use_container_width=True):
+            st.session_state['temp_data'] = {
+                "comercio": "",
+                "total": 0.0,
+                "fecha": datetime.now().strftime("%d/%m/%Y"), # Fecha de hoy automática
+                "hora": datetime.now().strftime("%H:%M"),     # Hora actual automática
+                "categoria": "Alimentos y Supermercado",
+                "ubicacion": "",
+                "detalles": "Gasto manual sin comprobante",
+                "latitud": 0.0,
+                "longitud": 0.0
+            }
+            st.rerun()
 
     with col2:
         st.markdown("#### 2. Validación Fiscal")
