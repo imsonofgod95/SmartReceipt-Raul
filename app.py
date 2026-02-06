@@ -331,15 +331,14 @@ with tab_nuevo:
                                 st.toast("Lectura completada", icon="✅")
                         except: st.error("Error de formato")
         
-        # --- AQUÍ ESTÁ EL BOTÓN PARA GASTOS MANUALES (TACOS, PROPINAS) ---
         st.markdown("---")
         st.info("¿Gasto sin comprobante? (Tacos, Propinas, etc.)")
         if st.button("✍️ Captura Manual", use_container_width=True):
             st.session_state['temp_data'] = {
                 "comercio": "",
                 "total": 0.0,
-                "fecha": datetime.now().strftime("%d/%m/%Y"), # Fecha de hoy automática
-                "hora": datetime.now().strftime("%H:%M"),     # Hora actual automática
+                "fecha": datetime.now().strftime("%d/%m/%Y"),
+                "hora": datetime.now().strftime("%H:%M"),
                 "categoria": "Alimentos y Supermercado",
                 "ubicacion": "",
                 "detalles": "Gasto manual sin comprobante",
@@ -456,7 +455,45 @@ with tab_dashboard:
                 )],
                 tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
             ))
-                
+            
+            # --- SECCIÓN DE GESTIÓN (BORRAR) ---
+            st.markdown("---")
+            st.markdown("### 🗑️ Gestión de Registros")
+            st.caption("Selecciona un registro para eliminarlo permanentemente.")
+            
+            # Creamos un diccionario para el selectbox que muestre info útil
+            opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
+            
+            col_b1, col_b2 = st.columns([3, 1])
+            with col_b1:
+                seleccion = st.selectbox("Seleccionar Gasto a Eliminar", options=list(opciones_borrar.keys()))
+            
+            with col_b2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Eliminar", type="primary"):
+                    # Obtenemos el índice REAL del DataFrame original (no el filtrado)
+                    idx_real = opciones_borrar[seleccion]
+                    
+                    # Para borrar de Google Sheets, necesitamos encontrar la fila correcta.
+                    # Asumimos que el orden en st.session_state['gastos'] es cronológico de inserción,
+                    # pero Google Sheets tiene encabezado en fila 1.
+                    # La fila en Sheets es idx_real + 2 (1 por header, +1 por índice 0-based)
+                    
+                    hoja = get_google_sheet()
+                    if hoja:
+                        try:
+                            # Borramos la fila en Google Sheets (fila física = índice + 2)
+                            hoja.delete_rows(idx_real + 2)
+                            st.toast("Registro eliminado de la Nube", icon="🗑️")
+                            
+                            # Borramos de la sesión local
+                            del st.session_state['gastos'][idx_real]
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al borrar: {e}")
+                    else:
+                        st.error("No hay conexión con la base de datos.")
+
         with st.expander("📂 Exportar Datos"):
             st.dataframe(df_filtrado, use_container_width=True)
     else: st.info("No hay datos disponibles para los filtros seleccionados.")
