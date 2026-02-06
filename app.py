@@ -14,7 +14,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 # =======================================================
-# 1. CEREBRO BILINGÜE (DICCIONARIOS DE TRADUCCIÓN) 🌍
+# 1. CEREBRO BILINGÜE (TEXTOS) 🌍
 # =======================================================
 TEXTOS = {
     "ES": {
@@ -139,10 +139,6 @@ st.markdown("""
     }
     .metric-value {font-size: 2rem; font-weight: 700; color: #0F172A;}
     .metric-label {font-size: 0.875rem; color: #64748B; font-weight: 500;}
-    .highlight-box {
-        background-color: #F0F9FF; border-left: 5px solid #0284C7;
-        padding: 15px; border-radius: 5px; margin-bottom: 10px;
-    }
     .stButton > button {border-radius: 8px; font-weight: 600;}
     [data-testid="stSidebar"] {background-color: #F8FAFC; border-right: 1px solid #E2E8F0;}
     </style>
@@ -158,7 +154,6 @@ if "username" not in st.session_state: st.session_state.username = ""
 def login():
     c1, c2, c3 = st.columns([1,2,1])
     with c2:
-        # Selector de idioma
         lang_sel = st.selectbox("Language / Idioma", ["Español", "English"], key="lang_login")
         st.session_state.language = "ES" if lang_sel == "Español" else "EN"
         t = TEXTOS[st.session_state.language]
@@ -195,7 +190,6 @@ if not st.session_state.logged_in:
     login()
     st.stop()
 
-# Cargar textos dinámicos
 T = TEXTOS[st.session_state.language]
 CATS_ACTUALES = CATEGORIAS[st.session_state.language]
 
@@ -256,30 +250,22 @@ def analizar_ticket(imagen_pil, idioma_actual):
     try:
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(CATS_ACTUALES)
-        
-        # PROMPT DE GEOCODIFICACIÓN (EL CAMBIO CLAVE) 📍
-        # Le ordenamos que ESTIME las coordenadas basado en la dirección leída.
-        
         instrucciones_idioma = "Output values in ENGLISH." if idioma_actual == "EN" else "Valores de texto en ESPAÑOL."
 
+        # PROMPT ROBUSTO
         prompt = f"""
-        Actúa como un sistema experto de OCR y Geolocalización. Analiza la imagen.
+        Actúa como experto OCR y Geolocalización.
         {instrucciones_idioma}
+        LISTA DE CATEGORÍAS: [{cats_str}]
         
-        INSTRUCCIONES CRÍTICAS DE EXTRACCIÓN:
-        1. COMERCIO: Nombre del negocio.
-        2. FECHA: Formato DD/MM/AAAA.
-        3. TOTAL: El monto final a pagar.
-        4. CATEGORÍA: Elige UNA de esta lista: [{cats_str}]
-        
-        🔵 INSTRUCCIONES DE GEOLOCALIZACIÓN (INTELIGENTE):
-        - Busca la DIRECCIÓN en el ticket (Calle, Colonia, Municipio, Ciudad, Estado).
-        - Basado en esa dirección, **ESTIMA/CALCULA** las coordenadas de Latitud y Longitud aproximadas.
-        - Si no hay dirección precisa, usa las coordenadas del CENTRO de la ciudad o municipio que aparezca.
-        - ¡NO DEVUELVAS 0.0 si puedes inferir la ciudad!
+        INSTRUCCIONES:
+        1. Extrae: Comercio, Fecha (DD/MM/AAAA), Total, Hora.
+        2. DIRECCIÓN Y GPS: Busca cualquier indicio de dirección (Ciudad Satélite, Reforma, Polanco, etc.) y **ESTIMA** las coordenadas (lat/lon).
+        3. Si no encuentras dirección exacta, usa las coordenadas de la ciudad detectada.
+        4. JSON PURO: No incluyas markdown (```json). Solo el objeto JSON.
         
         JSON OBLIGATORIO: 
-        {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección detectada", "latitud": 19.0000, "longitud": -99.0000, "categoria": "Texto", "detalles": "Texto"}}
+        {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección", "latitud": 19.4326, "longitud": -99.1332, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, modelo
@@ -299,14 +285,15 @@ def consultar_chat_financiero(pregunta, datos_df, idioma_actual):
         return response.text
     except Exception as e: return f"Error Chat: {e}"
 
+# --- FUNCIÓN BLINDADA PARA FLOTANTES ---
 def safe_float(val):
     try:
-        if val is None: return 0.0
+        if val is None or val == "" or str(val).strip().lower() == "null": return 0.0
         return float(val)
     except: return 0.0
 
 # =======================================================
-# 6. DASHBOARD & SIDEBAR
+# 6. DASHBOARD & UI
 # =======================================================
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
@@ -355,7 +342,6 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.rerun()
 
-# --- MAIN CONTENT ---
 st.markdown('<h1 class="main-header">SmartReceipt <span style="font-weight:300;">Global</span></h1>', unsafe_allow_html=True)
 
 if not df_filtrado.empty:
@@ -381,15 +367,25 @@ with tab_nuevo:
             st.image(img_proc, caption="OCR Ready", use_container_width=True)
             if st.button(T['analyze_btn'], type="primary"):
                 with st.spinner("AI Working..."):
-                    txt, mod = analizar_ticket(img_proc, st.session_state.language) 
+                    txt, mod = analizar_ticket(img_proc, st.session_state.language)
+                    # --- LIMPIEZA DE JSON EXTRA ---
+                    txt = txt.replace("```json", "").replace("```", "").strip()
+                    
                     if "Error" in txt: st.error(txt)
                     else:
                         try:
+                            # Intento directo de JSON primero
+                            st.session_state['temp_data'] = json.loads(txt)
+                            st.rerun()
+                        except:
+                            # Fallback con Regex
                             match = re.search(r'\{.*\}', txt, re.DOTALL)
                             if match:
-                                st.session_state['temp_data'] = json.loads(match.group())
-                                st.rerun()
-                        except: st.error("Format Error")
+                                try:
+                                    st.session_state['temp_data'] = json.loads(match.group())
+                                    st.rerun()
+                                except: st.error("JSON Parsing Failed")
+                            else: st.error("Format Error (No JSON found)")
         
         st.markdown("---")
         st.info(T['manual_info'])
@@ -410,7 +406,7 @@ with tab_nuevo:
             with st.container(border=True):
                 c1,c2 = st.columns(2)
                 vc = c1.text_input(T['commerce'], data.get("comercio",""))
-                try: val_monto = float(str(data.get("total",0)).replace("$","").replace(",",""))
+                try: val_monto = safe_float(str(data.get("total",0)).replace("$","").replace(",",""))
                 except: val_monto = 0.0
                 vm = c2.number_input("Total ($)", value=val_monto)
 
@@ -431,8 +427,8 @@ with tab_nuevo:
                     vu = st.text_input("Location", data.get("ubicacion",""))
                     vdet = st.text_input("Details", data.get("detalles",""))
                     
-                    # Latitud y Longitud visibles y editables
                     c_gps1, c_gps2 = st.columns(2)
+                    # --- USO DE SAFE_FLOAT PARA EVITAR EL CRASH ---
                     vlat = c_gps1.number_input("Lat", value=safe_float(data.get("latitud")), format="%.5f")
                     vlon = c_gps2.number_input("Lon", value=safe_float(data.get("longitud")), format="%.5f")
 
@@ -481,7 +477,6 @@ with tab_dashboard:
                 line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
                 st.altair_chart(line, use_container_width=True)
         
-        # Mapa (Mantuvimos el mapa)
         map_data = df_filtrado[(df_filtrado['lat']!=0)]
         if not map_data.empty:
             st.markdown("##### 🗺️ Map")
@@ -499,7 +494,6 @@ with tab_dashboard:
                 tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
             ))
 
-        # Borrado
         st.markdown(f"### {T['delete_title']}")
         st.caption(T['delete_caption'])
         opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
