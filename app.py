@@ -72,6 +72,15 @@ st.markdown("""
     .metric-value {font-size: 2rem; font-weight: 700; color: #0F172A;}
     .metric-label {font-size: 0.875rem; color: #64748B; font-weight: 500;}
     
+    /* Estilo para los Highlights */
+    .highlight-box {
+        background-color: #F0F9FF;
+        border-left: 5px solid #0284C7;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+    
     .stButton > button {
         border-radius: 8px; font-weight: 600; border: none;
         transition: all 0.2s;
@@ -152,7 +161,6 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
     if hoja:
         try:
             if hoja.acell('A1').value != "Usuario":
-                # MODIFICADO: Agregada columna "Hora"
                 hoja.insert_row(["Usuario", "Fecha", "Hora", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"], 1)
             raw = hoja.get_all_records()
             df_full = pd.DataFrame(raw)
@@ -198,7 +206,6 @@ def analizar_ticket(imagen_pil):
         Analiza ticket. JSON EXCLUSIVO.
         UBICACIÓN: Busca SUCURSAL física y estima GPS (lat/lon).
         CATEGORÍA: [{cats_str}]
-        # MODIFICADO: Solicitud de hora
         JSON: {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Sucursal", "latitud": 19.0000, "longitud": -99.0000, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
@@ -320,11 +327,9 @@ with tab_nuevo:
                 c1,c2 = st.columns(2)
                 vc = c1.text_input("Comercio", data.get("comercio",""))
                 vm = c2.number_input("Monto Total ($)", value=float(str(data.get("total",0)).replace("$","").replace(",","")))
-                
-                # MODIFICADO: Agregada columna de HORA en el formulario
                 c3,c4,c5 = st.columns(3)
                 vf = c3.text_input("Fecha", data.get("fecha",""))
-                vh = c4.text_input("Hora", data.get("hora", "00:00")) # Nueva entrada
+                vh = c4.text_input("Hora", data.get("hora", "00:00"))
                 cat_def = data.get("categoria","Varios")
                 idx = LISTA_CATEGORIAS.index(cat_def) if cat_def in LISTA_CATEGORIAS else 19
                 vcat = c5.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
@@ -336,7 +341,6 @@ with tab_nuevo:
                     vlon = float(data.get("longitud", 0.0))
 
                 if st.button("💾 Guardar Transacción", type="primary", use_container_width=True):
-                    # MODIFICADO: Agregada hora al objeto a guardar
                     nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
                     st.session_state['gastos'].append(nuevo)
                     hoja = get_google_sheet()
@@ -348,6 +352,31 @@ with tab_nuevo:
 
 with tab_dashboard:
     if not df_filtrado.empty:
+        # --- AQUÍ ESTÁN LOS HIGHLIGHTS AUTOMÁTICOS ---
+        st.markdown("### 💡 Highlights del Periodo")
+        hc1, hc2, hc3 = st.columns(3)
+        
+        # 1. Gasto Máximo
+        idx_max = df_filtrado['Monto'].idxmax()
+        row_max = df_filtrado.loc[idx_max]
+        with hc1:
+            st.info(f"💸 **Compra más grande:**\n\n${row_max['Monto']:,.2f} en **{row_max['Comercio']}** el día {row_max['Fecha']}.")
+            
+        # 2. Categoría Favorita
+        cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
+        monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
+        with hc2:
+            st.success(f"🛍️ **Categoría Top:**\n\n**{cat_top}** con un total de ${monto_cat:,.2f}.")
+            
+        # 3. Día de Mayor Gasto
+        if 'Fecha' in df_filtrado.columns:
+            dia_top = df_filtrado.groupby('Fecha')['Monto'].sum().idxmax()
+            monto_dia = df_filtrado.groupby('Fecha')['Monto'].sum().max()
+            with hc3:
+                st.warning(f"📅 **Día más pesado:**\n\n**{dia_top}** (Total del día: ${monto_dia:,.2f})")
+        
+        st.markdown("---")
+        
         st.markdown("##### 🏢 Gasto por Comercio")
         chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
             x=alt.X('Monto', title='Monto Total'),
@@ -374,18 +403,17 @@ with tab_dashboard:
                 )
                 st.altair_chart(line, use_container_width=True)
 
-        # MAPA REPARADO (V23.1)
         map_data = df_filtrado[(df_filtrado['lat']!=0)]
         if not map_data.empty:
             st.markdown("##### 🗺️ Mapa de Operaciones")
             st.pydeck_chart(pdk.Deck(
-                map_style=None, # SOLUCIÓN: Usar estilo base sin token
+                map_style=None,
                 initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
                 layers=[pdk.Layer(
                     "ScatterplotLayer",
                     data=map_data,
                     get_position='[lon, lat]',
-                    get_color=[15, 23, 42, 200], # Color fijo en lista (Azul oscuro)
+                    get_color=[15, 23, 42, 200],
                     get_radius=200,
                     pickable=True
                 )],
