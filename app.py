@@ -152,7 +152,8 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
     if hoja:
         try:
             if hoja.acell('A1').value != "Usuario":
-                hoja.insert_row(["Usuario", "Fecha", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"], 1)
+                # MODIFICADO: Agregada columna "Hora"
+                hoja.insert_row(["Usuario", "Fecha", "Hora", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"], 1)
             raw = hoja.get_all_records()
             df_full = pd.DataFrame(raw)
             if not df_full.empty and "Usuario" in df_full.columns:
@@ -197,7 +198,8 @@ def analizar_ticket(imagen_pil):
         Analiza ticket. JSON EXCLUSIVO.
         UBICACIÓN: Busca SUCURSAL física y estima GPS (lat/lon).
         CATEGORÍA: [{cats_str}]
-        JSON: {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "ubicacion": "Sucursal", "latitud": 19.0000, "longitud": -99.0000, "categoria": "Texto", "detalles": "Texto"}}
+        # MODIFICADO: Solicitud de hora
+        JSON: {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Sucursal", "latitud": 19.0000, "longitud": -99.0000, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, modelo
@@ -318,11 +320,14 @@ with tab_nuevo:
                 c1,c2 = st.columns(2)
                 vc = c1.text_input("Comercio", data.get("comercio",""))
                 vm = c2.number_input("Monto Total ($)", value=float(str(data.get("total",0)).replace("$","").replace(",","")))
-                c3,c4 = st.columns(2)
+                
+                # MODIFICADO: Agregada columna de HORA en el formulario
+                c3,c4,c5 = st.columns(3)
                 vf = c3.text_input("Fecha", data.get("fecha",""))
+                vh = c4.text_input("Hora", data.get("hora", "00:00")) # Nueva entrada
                 cat_def = data.get("categoria","Varios")
                 idx = LISTA_CATEGORIAS.index(cat_def) if cat_def in LISTA_CATEGORIAS else 19
-                vcat = c4.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
+                vcat = c5.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
                 
                 with st.expander("📍 Geolocalización y Notas"):
                     vu = st.text_input("Sucursal", data.get("ubicacion",""))
@@ -331,7 +336,8 @@ with tab_nuevo:
                     vlon = float(data.get("longitud", 0.0))
 
                 if st.button("💾 Guardar Transacción", type="primary", use_container_width=True):
-                    nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
+                    # MODIFICADO: Agregada hora al objeto a guardar
+                    nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
                     st.session_state['gastos'].append(nuevo)
                     hoja = get_google_sheet()
                     if hoja:
