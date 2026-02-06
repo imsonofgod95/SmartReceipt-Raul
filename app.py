@@ -72,7 +72,7 @@ st.markdown("""
     .metric-value {font-size: 2rem; font-weight: 700; color: #0F172A;}
     .metric-label {font-size: 0.875rem; color: #64748B; font-weight: 500;}
     
-    /* Estilo para los Highlights */
+    /* Estilo para los Highlights (MEJORA AGREGADA) */
     .highlight-box {
         background-color: #F0F9FF;
         border-left: 5px solid #0284C7;
@@ -173,14 +173,15 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
+# (MEJORA AGREGADA: Categorías para Recibos)
 LISTA_CATEGORIAS = [
     "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
-    "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)",
+    "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)", # Actualizado
     "Telefonía y Comunicaciones", "Ropa y Calzado", "Electrónica y Tecnología",
     "Entretenimiento y Cine", "Educación y Libros", "Mascotas",
     "Regalos y Detalles", "Viajes y Hoteles", "Suscripciones (Streaming)",
     "Cuidado Personal y Belleza", "Deportes y Gimnasio", "Oficina y Trabajo",
-    "Mantenimiento Automotriz", "Varios"
+    "Mantenimiento Automotriz", "Impuestos y Predial", "Varios" # Actualizado
 ]
 
 # =======================================================
@@ -202,10 +203,23 @@ def analizar_ticket(imagen_pil):
     try:
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(LISTA_CATEGORIAS)
+        
+        # (MEJORA AGREGADA: Prompt Inteligente para Recibos y Tickets)
         prompt = f"""
-        Analiza ticket. JSON EXCLUSIVO.
-        UBICACIÓN: Busca SUCURSAL física y estima GPS (lat/lon).
-        CATEGORÍA: [{cats_str}]
+        Analiza la imagen. Puede ser un TICKET DE COMPRA o un RECIBO DE SERVICIOS (Luz, Agua, Gas, Predial).
+        
+        SI ES UN RECIBO DE SERVICIOS:
+        - Comercio: Nombre del proveedor (CFE, Telmex, Siapa, Tesorería, etc).
+        - Total: Busca el "Total a Pagar".
+        - Fecha: Fecha de emisión.
+        - Detalles: Busca "Fecha Límite de Pago" o "Periodo Facturado".
+        - Categoría: "Servicios (Luz/Agua/Internet)" o "Impuestos y Predial".
+        
+        SI ES UN TICKET NORMAL:
+        - Extrae datos estándar.
+        
+        CATEGORÍA ELEGIDA DE: [{cats_str}]
+        
         JSON: {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Sucursal", "latitud": 19.0000, "longitud": -99.0000, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
@@ -231,7 +245,7 @@ def consultar_chat_financiero(pregunta, datos_df):
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
 
-# Preprocesamiento de datos GLOBAL (Limpieza Crítica)
+# Preprocesamiento de datos GLOBAL
 if not df_local.empty:
     for c in ['lat','lon','Monto']:
         if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
@@ -255,17 +269,13 @@ with st.sidebar:
     st.markdown("### 🎯 Filtros de Datos")
     
     if not df_local.empty:
-        # Filtros en Cascada
         opts_mes = sorted([x for x in df_local['Mes_Año'].unique() if x is not None and str(x) != 'nan'], reverse=True)
         sel_mes = st.multiselect("📅 Periodo", opts_mes)
-        
         opts_cat = sorted([str(x) for x in df_local['Categoría'].unique() if x])
         sel_cat = st.multiselect("🏷️ Categoría", opts_cat)
-        
         opts_com = sorted([str(x) for x in df_local['Comercio'].unique() if x])
         sel_com = st.multiselect("🏪 Comercio", opts_com)
         
-        # Lógica de Filtrado
         df_filtrado = df_local.copy()
         if sel_mes: df_filtrado = df_filtrado[df_filtrado['Mes_Año'].isin(sel_mes)]
         if sel_cat: df_filtrado = df_filtrado[df_filtrado['Categoría'].isin(sel_cat)]
@@ -285,6 +295,8 @@ with st.sidebar:
 # --- MAIN CONTENT ---
 st.markdown('<h1 class="main-header">SmartReceipt <span style="font-weight:300;">Enterprise</span></h1>', unsafe_allow_html=True)
 
+[Image of financial dashboard layout with highlights section]
+
 if not df_filtrado.empty:
     m1, m2, m3, m4 = st.columns(4)
     with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">Gasto Total</div><div class="metric-value" style="color:#0F172A">${df_filtrado["Monto"].sum():,.0f}</div></div>', unsafe_allow_html=True)
@@ -301,7 +313,7 @@ tab_nuevo, tab_dashboard, tab_chat = st.tabs(["📸 Nuevo Ticket", "📈 Dashboa
 with tab_nuevo:
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
-        st.markdown("#### 1. Digitalización")
+        st.markdown("#### 1. Digitalización (Tickets y Recibos)")
         archivo = st.file_uploader("Subir comprobante", type=["jpg","png","jpeg"], label_visibility="collapsed")
         if archivo:
             img = Image.open(archivo)
@@ -325,18 +337,18 @@ with tab_nuevo:
             data = st.session_state['temp_data']
             with st.container(border=True):
                 c1,c2 = st.columns(2)
-                vc = c1.text_input("Comercio", data.get("comercio",""))
+                vc = c1.text_input("Comercio / Proveedor", data.get("comercio",""))
                 vm = c2.number_input("Monto Total ($)", value=float(str(data.get("total",0)).replace("$","").replace(",","")))
                 c3,c4,c5 = st.columns(3)
                 vf = c3.text_input("Fecha", data.get("fecha",""))
                 vh = c4.text_input("Hora", data.get("hora", "00:00"))
                 cat_def = data.get("categoria","Varios")
-                idx = LISTA_CATEGORIAS.index(cat_def) if cat_def in LISTA_CATEGORIAS else 19
+                idx = LISTA_CATEGORIAS.index(cat_def) if cat_def in LISTA_CATEGORIAS else 20
                 vcat = c5.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
                 
                 with st.expander("📍 Geolocalización y Notas"):
                     vu = st.text_input("Sucursal", data.get("ubicacion",""))
-                    vdet = st.text_input("Concepto", data.get("detalles",""))
+                    vdet = st.text_input("Concepto / Periodo", data.get("detalles",""))
                     vlat = float(data.get("latitud", 0.0))
                     vlon = float(data.get("longitud", 0.0))
 
@@ -352,28 +364,25 @@ with tab_nuevo:
 
 with tab_dashboard:
     if not df_filtrado.empty:
-        # --- AQUÍ ESTÁN LOS HIGHLIGHTS AUTOMÁTICOS ---
+        # (MEJORA AGREGADA: Sección de Highlights)
         st.markdown("### 💡 Highlights del Periodo")
         hc1, hc2, hc3 = st.columns(3)
         
-        # 1. Gasto Máximo
         idx_max = df_filtrado['Monto'].idxmax()
         row_max = df_filtrado.loc[idx_max]
         with hc1:
-            st.info(f"💸 **Compra más grande:**\n\n${row_max['Monto']:,.2f} en **{row_max['Comercio']}** el día {row_max['Fecha']}.")
-            
-        # 2. Categoría Favorita
+            st.info(f"💸 **Compra más grande:**\n\n${row_max['Monto']:,.2f} en **{row_max['Comercio']}** ({row_max['Fecha']}).")
+        
         cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
         monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
         with hc2:
-            st.success(f"🛍️ **Categoría Top:**\n\n**{cat_top}** con un total de ${monto_cat:,.2f}.")
+            st.success(f"🛍️ **Categoría Top:**\n\n**{cat_top}** (${monto_cat:,.2f}).")
             
-        # 3. Día de Mayor Gasto
-        if 'Fecha' in df_filtrado.columns:
-            dia_top = df_filtrado.groupby('Fecha')['Monto'].sum().idxmax()
-            monto_dia = df_filtrado.groupby('Fecha')['Monto'].sum().max()
-            with hc3:
-                st.warning(f"📅 **Día más pesado:**\n\n**{dia_top}** (Total del día: ${monto_dia:,.2f})")
+        # Highlight de Servicios (Nuevo)
+        servicios = df_filtrado[df_filtrado['Categoría'].str.contains("Servicios", case=False, na=False)]
+        total_serv = servicios['Monto'].sum() if not servicios.empty else 0
+        with hc3:
+            st.warning(f"⚡ **Gastos en Servicios:**\n\nTotal: **${total_serv:,.2f}** (Luz, Agua, etc.)")
         
         st.markdown("---")
         
@@ -381,66 +390,4 @@ with tab_dashboard:
         chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
             x=alt.X('Monto', title='Monto Total'),
             y=alt.Y('Comercio', sort='-x'),
-            color=alt.Color('Monto', scale={'scheme': 'blues'}),
-            tooltip=['Comercio', 'Monto', 'Fecha']
-        ).properties(height=300)
-        st.altair_chart(chart_bar, use_container_width=True)
-        
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            st.markdown("##### Distribución")
-            base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
-            pie = base.mark_arc(innerRadius=60).encode(
-                color=alt.Color("Categoría", scale={'scheme': 'tableau10'}),
-                tooltip=["Categoría", "Monto"]
-            )
-            st.altair_chart(pie, use_container_width=True)
-        with col_g2:
-            st.markdown("##### Historial Temporal")
-            if 'Fecha_dt' in df_filtrado.columns:
-                line = alt.Chart(df_filtrado).mark_line(point=True, interpolate='monotone').encode(
-                    x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto', 'Comercio']
-                )
-                st.altair_chart(line, use_container_width=True)
-
-        map_data = df_filtrado[(df_filtrado['lat']!=0)]
-        if not map_data.empty:
-            st.markdown("##### 🗺️ Mapa de Operaciones")
-            st.pydeck_chart(pdk.Deck(
-                map_style=None,
-                initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
-                layers=[pdk.Layer(
-                    "ScatterplotLayer",
-                    data=map_data,
-                    get_position='[lon, lat]',
-                    get_color=[15, 23, 42, 200],
-                    get_radius=200,
-                    pickable=True
-                )],
-                tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
-            ))
-                
-        with st.expander("📂 Exportar Datos"):
-            st.dataframe(df_filtrado, use_container_width=True)
-    else: st.info("No hay datos disponibles para los filtros seleccionados.")
-
-with tab_chat:
-    st.caption("Asistente financiero potenciado por Gemini 1.5. Pregunta sobre patrones de gasto.")
-    for m in st.session_state['chat_history']:
-        with st.chat_message(m["role"]): st.markdown(m["content"])
-    if q := st.chat_input("Ej: ¿Cuál fue mi gasto más alto en Restaurantes?"):
-        with st.chat_message("user"): st.markdown(q)
-        st.session_state['chat_history'].append({"role":"user", "content":q})
-        if df_filtrado.empty: r = "Sin datos."
-        else:
-            with st.spinner("Analizando..."): r = consultar_chat_financiero(q, df_filtrado)
-        with st.chat_message("assistant"): st.markdown(r)
-        st.session_state['chat_history'].append({"role":"assistant", "content":r})
-
-# FOOTER
-st.markdown("""
-<div style="text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;">
-    SmartReceipt Inc. © 2026 | Cumplimiento LFPDPPP | 
-    <a href="#" style="color: #64748b;">Privacidad</a>
-</div>
-""", unsafe_allow_html=True)
+            color=alt
