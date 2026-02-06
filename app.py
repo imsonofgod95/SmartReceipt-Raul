@@ -257,19 +257,29 @@ def analizar_ticket(imagen_pil, idioma_actual):
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(CATS_ACTUALES)
         
-        instrucciones_extra = ""
-        if idioma_actual == "EN":
-            instrucciones_extra = "Output 'categoria' and 'detalles' IN ENGLISH matching the list."
-        else:
-            instrucciones_extra = "Extrae 'categoria' y 'detalles' EN ESPAÑOL coincidiendo con la lista."
+        # PROMPT DE GEOCODIFICACIÓN (EL CAMBIO CLAVE) 📍
+        # Le ordenamos que ESTIME las coordenadas basado en la dirección leída.
+        
+        instrucciones_idioma = "Output values in ENGLISH." if idioma_actual == "EN" else "Valores de texto en ESPAÑOL."
 
         prompt = f"""
-        Analiza imagen (Ticket, Recibo, Manuscrito).
-        {instrucciones_extra}
+        Actúa como un sistema experto de OCR y Geolocalización. Analiza la imagen.
+        {instrucciones_idioma}
         
-        LISTA DE CATEGORÍAS VÁLIDAS: [{cats_str}]
+        INSTRUCCIONES CRÍTICAS DE EXTRACCIÓN:
+        1. COMERCIO: Nombre del negocio.
+        2. FECHA: Formato DD/MM/AAAA.
+        3. TOTAL: El monto final a pagar.
+        4. CATEGORÍA: Elige UNA de esta lista: [{cats_str}]
         
-        JSON OBLIGATORIO: {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Sucursal", "latitud": 0.0, "longitud": 0.0, "categoria": "Texto", "detalles": "Texto"}}
+        🔵 INSTRUCCIONES DE GEOLOCALIZACIÓN (INTELIGENTE):
+        - Busca la DIRECCIÓN en el ticket (Calle, Colonia, Municipio, Ciudad, Estado).
+        - Basado en esa dirección, **ESTIMA/CALCULA** las coordenadas de Latitud y Longitud aproximadas.
+        - Si no hay dirección precisa, usa las coordenadas del CENTRO de la ciudad o municipio que aparezca.
+        - ¡NO DEVUELVAS 0.0 si puedes inferir la ciudad!
+        
+        JSON OBLIGATORIO: 
+        {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección detectada", "latitud": 19.0000, "longitud": -99.0000, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, modelo
@@ -303,10 +313,7 @@ df_filtrado = pd.DataFrame()
 
 if not df_local.empty:
     for c in ['lat','lon','Monto']:
-        # Protección extra contra errores de conversión
-        if c in df_local.columns: 
-            df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
-    
+        if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
@@ -420,18 +427,16 @@ with tab_nuevo:
                 
                 vcat = c5.selectbox(T['category'], CATS_ACTUALES, index=idx)
                 
-                with st.expander("📍 GPS & Notes"):
+                with st.expander("📍 GPS & Notes", expanded=True):
                     vu = st.text_input("Location", data.get("ubicacion",""))
                     vdet = st.text_input("Details", data.get("detalles",""))
                     
-                    # --- AQUÍ ESTÁ EL CAMBIO IMPORTANTE ---
-                    # Hacemos visibles y editables la Latitud y Longitud
+                    # Latitud y Longitud visibles y editables
                     c_gps1, c_gps2 = st.columns(2)
                     vlat = c_gps1.number_input("Lat", value=safe_float(data.get("latitud")), format="%.5f")
                     vlon = c_gps2.number_input("Lon", value=safe_float(data.get("longitud")), format="%.5f")
 
                 if st.button(T['save_btn'], type="primary", use_container_width=True):
-                    # Guardamos los valores editados (vlat, vlon)
                     nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
                     st.session_state['gastos'].append(nuevo)
                     hoja = get_google_sheet()
@@ -476,7 +481,7 @@ with tab_dashboard:
                 line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
                 st.altair_chart(line, use_container_width=True)
         
-        # Mapa
+        # Mapa (Mantuvimos el mapa)
         map_data = df_filtrado[(df_filtrado['lat']!=0)]
         if not map_data.empty:
             st.markdown("##### 🗺️ Map")
