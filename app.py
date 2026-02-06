@@ -257,7 +257,6 @@ def analizar_ticket(imagen_pil, idioma_actual):
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(CATS_ACTUALES)
         
-        # PROMPT DINÁMICO SEGÚN IDIOMA
         instrucciones_extra = ""
         if idioma_actual == "EN":
             instrucciones_extra = "Output 'categoria' and 'detalles' IN ENGLISH matching the list."
@@ -304,7 +303,10 @@ df_filtrado = pd.DataFrame()
 
 if not df_local.empty:
     for c in ['lat','lon','Monto']:
-        if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
+        # Protección extra contra errores de conversión
+        if c in df_local.columns: 
+            df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
+    
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
@@ -315,7 +317,6 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    # Selector en Sidebar
     lang_side = st.selectbox("🌐 Language", ["Español", "English"], index=0 if st.session_state.language=="ES" else 1)
     if (lang_side == "Español" and st.session_state.language != "ES") or (lang_side == "English" and st.session_state.language != "EN"):
         st.session_state.language = "ES" if lang_side == "Español" else "EN"
@@ -373,7 +374,7 @@ with tab_nuevo:
             st.image(img_proc, caption="OCR Ready", use_container_width=True)
             if st.button(T['analyze_btn'], type="primary"):
                 with st.spinner("AI Working..."):
-                    txt, mod = analizar_ticket(img_proc, st.session_state.language) # Pasa idioma
+                    txt, mod = analizar_ticket(img_proc, st.session_state.language) 
                     if "Error" in txt: st.error(txt)
                     else:
                         try:
@@ -383,7 +384,6 @@ with tab_nuevo:
                                 st.rerun()
                         except: st.error("Format Error")
         
-        # --- CAPTURA MANUAL BILINGÜE ---
         st.markdown("---")
         st.info(T['manual_info'])
         if st.button(T['manual_btn'], use_container_width=True):
@@ -391,7 +391,7 @@ with tab_nuevo:
                 "comercio": "", "total": 0.0,
                 "fecha": datetime.now().strftime("%d/%m/%Y"),
                 "hora": datetime.now().strftime("%H:%M"),
-                "categoria": CATS_ACTUALES[0], # Categoría por defecto en idioma actual
+                "categoria": CATS_ACTUALES[0],
                 "ubicacion": "", "detalles": "Manual", "latitud": 0.0, "longitud": 0.0
             }
             st.rerun()
@@ -411,23 +411,27 @@ with tab_nuevo:
                 vf = c3.text_input("Date (DD/MM/YYYY)", data.get("fecha",""))
                 vh = c4.text_input("Time", data.get("hora", "00:00"))
                 
-                # Mapeo de Categorías Inteligente
                 cat_def = data.get("categoria","Misc")
                 idx = 0
                 if cat_def in CATS_ACTUALES:
                     idx = CATS_ACTUALES.index(cat_def)
                 else:
-                    idx = len(CATS_ACTUALES) - 1 # Varios/Misc
+                    idx = len(CATS_ACTUALES) - 1
                 
                 vcat = c5.selectbox(T['category'], CATS_ACTUALES, index=idx)
                 
                 with st.expander("📍 GPS & Notes"):
                     vu = st.text_input("Location", data.get("ubicacion",""))
                     vdet = st.text_input("Details", data.get("detalles",""))
-                    vlat = safe_float(data.get("latitud"))
-                    vlon = safe_float(data.get("longitud"))
+                    
+                    # --- AQUÍ ESTÁ EL CAMBIO IMPORTANTE ---
+                    # Hacemos visibles y editables la Latitud y Longitud
+                    c_gps1, c_gps2 = st.columns(2)
+                    vlat = c_gps1.number_input("Lat", value=safe_float(data.get("latitud")), format="%.5f")
+                    vlon = c_gps2.number_input("Lon", value=safe_float(data.get("longitud")), format="%.5f")
 
                 if st.button(T['save_btn'], type="primary", use_container_width=True):
+                    # Guardamos los valores editados (vlat, vlon)
                     nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
                     st.session_state['gastos'].append(nuevo)
                     hoja = get_google_sheet()
@@ -439,7 +443,6 @@ with tab_nuevo:
 
 with tab_dashboard:
     if not df_filtrado.empty:
-        # Highlights Bilingües
         st.markdown(f"### {T['highlights_title']}")
         hc1, hc2, hc3 = st.columns(3)
         idx_max = df_filtrado['Monto'].idxmax()
@@ -455,7 +458,6 @@ with tab_dashboard:
         with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
         
         st.markdown("---")
-        # Gráficos
         chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
             x=alt.X('Monto', title='Total'), y=alt.Y('Comercio', sort='-x'),
             color=alt.Color('Monto', scale={'scheme': 'blues'}), tooltip=['Comercio', 'Monto']
@@ -473,11 +475,28 @@ with tab_dashboard:
             if 'Fecha_dt' in df_filtrado.columns:
                 line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
                 st.altair_chart(line, use_container_width=True)
+        
+        # Mapa
+        map_data = df_filtrado[(df_filtrado['lat']!=0)]
+        if not map_data.empty:
+            st.markdown("##### 🗺️ Map")
+            st.pydeck_chart(pdk.Deck(
+                map_style=None,
+                initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
+                layers=[pdk.Layer(
+                    "ScatterplotLayer",
+                    data=map_data,
+                    get_position='[lon, lat]',
+                    get_color=[15, 23, 42, 200],
+                    get_radius=200,
+                    pickable=True
+                )],
+                tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
+            ))
 
-        # --- SECCIÓN DE GESTIÓN (BORRAR) CON TRADUCCIÓN ---
+        # Borrado
         st.markdown(f"### {T['delete_title']}")
         st.caption(T['delete_caption'])
-        
         opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
         c_del1, c_del2 = st.columns([3,1])
         with c_del1: 
@@ -507,7 +526,7 @@ with tab_chat:
         if df_filtrado.empty: r = "No data."
         else:
             with st.spinner("AI Thinking..."): 
-                r = consultar_chat_financiero(q, df_filtrado, st.session_state.language) # Pasa idioma
+                r = consultar_chat_financiero(q, df_filtrado, st.session_state.language) 
         with st.chat_message("assistant"): st.markdown(r)
         st.session_state['chat_history'].append({"role":"assistant", "content":r})
 
