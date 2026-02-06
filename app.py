@@ -242,6 +242,18 @@ def procesar_imagen_opencv(imagen_pil):
     enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(gray)
     return Image.fromarray(enhanced)
 
+# --- FUNCIÓN QUIRÚRGICA PARA LIMPIAR JSON ---
+def limpiar_json(texto_sucio):
+    # Busca el primer corchete '{'
+    inicio = texto_sucio.find('{')
+    # Busca el último corchete '}'
+    fin = texto_sucio.rfind('}')
+    
+    if inicio != -1 and fin != -1:
+        return texto_sucio[inicio:fin+1]
+    else:
+        return texto_sucio # Devuelve igual si no encuentra, para que falle y lo detectemos
+
 def analizar_ticket(imagen_pil, idioma_actual):
     try:
         mods = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -252,7 +264,6 @@ def analizar_ticket(imagen_pil, idioma_actual):
         cats_str = ", ".join(CATS_ACTUALES)
         instrucciones_idioma = "Output values in ENGLISH." if idioma_actual == "EN" else "Valores de texto en ESPAÑOL."
 
-        # PROMPT ROBUSTO
         prompt = f"""
         Actúa como experto OCR y Geolocalización.
         {instrucciones_idioma}
@@ -262,7 +273,7 @@ def analizar_ticket(imagen_pil, idioma_actual):
         1. Extrae: Comercio, Fecha (DD/MM/AAAA), Total, Hora.
         2. DIRECCIÓN Y GPS: Busca cualquier indicio de dirección (Ciudad Satélite, Reforma, Polanco, etc.) y **ESTIMA** las coordenadas (lat/lon).
         3. Si no encuentras dirección exacta, usa las coordenadas de la ciudad detectada.
-        4. JSON PURO: No incluyas markdown (```json). Solo el objeto JSON.
+        4. JSON PURO: No incluyas markdown. Solo el objeto JSON.
         
         JSON OBLIGATORIO: 
         {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección", "latitud": 19.4326, "longitud": -99.1332, "categoria": "Texto", "detalles": "Texto"}}
@@ -285,7 +296,6 @@ def consultar_chat_financiero(pregunta, datos_df, idioma_actual):
         return response.text
     except Exception as e: return f"Error Chat: {e}"
 
-# --- FUNCIÓN BLINDADA PARA FLOTANTES ---
 def safe_float(val):
     try:
         if val is None or val == "" or str(val).strip().lower() == "null": return 0.0
@@ -368,24 +378,20 @@ with tab_nuevo:
             if st.button(T['analyze_btn'], type="primary"):
                 with st.spinner("AI Working..."):
                     txt, mod = analizar_ticket(img_proc, st.session_state.language)
-                    # --- LIMPIEZA DE JSON EXTRA ---
-                    txt = txt.replace("```json", "").replace("```", "").strip()
+                    
+                    # --- APLICAMOS LA FUNCIÓN QUIRÚRGICA ---
+                    txt_limpio = limpiar_json(txt)
                     
                     if "Error" in txt: st.error(txt)
                     else:
                         try:
-                            # Intento directo de JSON primero
-                            st.session_state['temp_data'] = json.loads(txt)
+                            st.session_state['temp_data'] = json.loads(txt_limpio)
                             st.rerun()
-                        except:
-                            # Fallback con Regex
-                            match = re.search(r'\{.*\}', txt, re.DOTALL)
-                            if match:
-                                try:
-                                    st.session_state['temp_data'] = json.loads(match.group())
-                                    st.rerun()
-                                except: st.error("JSON Parsing Failed")
-                            else: st.error("Format Error (No JSON found)")
+                        except Exception as e:
+                            st.error(f"Error parsing JSON: {e}")
+                            # Mostrar el texto crudo para depurar si falla
+                            with st.expander("Ver respuesta cruda"):
+                                st.code(txt)
         
         st.markdown("---")
         st.info(T['manual_info'])
@@ -428,7 +434,6 @@ with tab_nuevo:
                     vdet = st.text_input("Details", data.get("detalles",""))
                     
                     c_gps1, c_gps2 = st.columns(2)
-                    # --- USO DE SAFE_FLOAT PARA EVITAR EL CRASH ---
                     vlat = c_gps1.number_input("Lat", value=safe_float(data.get("latitud")), format="%.5f")
                     vlon = c_gps2.number_input("Lon", value=safe_float(data.get("longitud")), format="%.5f")
 
