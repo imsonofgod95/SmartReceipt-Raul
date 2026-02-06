@@ -173,7 +173,7 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
-# LISTA ACTUALIZADA CON SERVICIOS Y PREDIAAL
+# LISTA ACTUALIZADA
 LISTA_CATEGORIAS = [
     "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
     "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)", 
@@ -203,7 +203,6 @@ def analizar_ticket(imagen_pil):
     try:
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(LISTA_CATEGORIAS)
-        # PROMPT MEJORADO PARA DETECTAR RECIBOS Y FECHAS DE PAGO
         prompt = f"""
         Analiza la imagen. Puede ser un TICKET DE COMPRA o un RECIBO DE SERVICIOS (Luz, Agua, Gas, Predial).
         
@@ -338,8 +337,21 @@ with tab_nuevo:
                 c3,c4,c5 = st.columns(3)
                 vf = c3.text_input("Fecha", data.get("fecha",""))
                 vh = c4.text_input("Hora", data.get("hora", "00:00"))
+                
+                # --- AQUÍ ESTÁ LA CORRECCIÓN DE CATEGORÍA ---
                 cat_def = data.get("categoria","Varios")
-                idx = LISTA_CATEGORIAS.index(cat_def) if cat_def in LISTA_CATEGORIAS else 20
+                # Lógica Flexible: Si la IA dice "Luz", "CFE", etc., forzamos "Servicios"
+                if "Servicios" in cat_def or "Luz" in cat_def or "Agua" in cat_def or "CFE" in cat_def or "Gas" in cat_def:
+                     # Busca el índice exacto de "Servicios (Luz/Agua/Internet)"
+                     idx = LISTA_CATEGORIAS.index("Servicios (Luz/Agua/Internet)")
+                elif "Predial" in cat_def or "Impuesto" in cat_def:
+                     idx = LISTA_CATEGORIAS.index("Impuestos y Predial")
+                elif cat_def in LISTA_CATEGORIAS:
+                     idx = LISTA_CATEGORIAS.index(cat_def)
+                else:
+                     # Si no coincide nada, se va a "Varios" (índice 20)
+                     idx = LISTA_CATEGORIAS.index("Varios")
+
                 vcat = c5.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
                 
                 with st.expander("📍 Geolocalización y Notas"):
@@ -360,7 +372,6 @@ with tab_nuevo:
 
 with tab_dashboard:
     if not df_filtrado.empty:
-        # AQUI ESTAN LOS HIGHLIGHTS (NUEVA SECCIÓN)
         st.markdown("### 💡 Highlights del Periodo")
         hc1, hc2, hc3 = st.columns(3)
         
