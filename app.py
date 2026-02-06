@@ -173,7 +173,6 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
-# LISTA ACTUALIZADA
 LISTA_CATEGORIAS = [
     "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
     "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)", 
@@ -236,6 +235,13 @@ def consultar_chat_financiero(pregunta, datos_df):
         response = model.generate_content(prompt)
         return response.text
     except Exception as e: return f"Error Chat: {e}"
+
+# --- FUNCIÓN DE SEGURIDAD PARA NÚMEROS ---
+def safe_float(val):
+    try:
+        if val is None: return 0.0
+        return float(val)
+    except: return 0.0
 
 # =======================================================
 # 6. DASHBOARD & SIDEBAR PROFESIONAL
@@ -333,23 +339,25 @@ with tab_nuevo:
             with st.container(border=True):
                 c1,c2 = st.columns(2)
                 vc = c1.text_input("Comercio / Proveedor", data.get("comercio",""))
-                vm = c2.number_input("Monto Total ($)", value=float(str(data.get("total",0)).replace("$","").replace(",","")))
+                # Corrección de seguridad en Monto
+                try:
+                    val_monto = float(str(data.get("total",0)).replace("$","").replace(",",""))
+                except: val_monto = 0.0
+                vm = c2.number_input("Monto Total ($)", value=val_monto)
+
                 c3,c4,c5 = st.columns(3)
                 vf = c3.text_input("Fecha", data.get("fecha",""))
                 vh = c4.text_input("Hora", data.get("hora", "00:00"))
                 
-                # --- AQUÍ ESTÁ LA CORRECCIÓN DE CATEGORÍA ---
+                # CORRECCIÓN DE CATEGORÍA
                 cat_def = data.get("categoria","Varios")
-                # Lógica Flexible: Si la IA dice "Luz", "CFE", etc., forzamos "Servicios"
                 if "Servicios" in cat_def or "Luz" in cat_def or "Agua" in cat_def or "CFE" in cat_def or "Gas" in cat_def:
-                     # Busca el índice exacto de "Servicios (Luz/Agua/Internet)"
                      idx = LISTA_CATEGORIAS.index("Servicios (Luz/Agua/Internet)")
                 elif "Predial" in cat_def or "Impuesto" in cat_def:
                      idx = LISTA_CATEGORIAS.index("Impuestos y Predial")
                 elif cat_def in LISTA_CATEGORIAS:
                      idx = LISTA_CATEGORIAS.index(cat_def)
                 else:
-                     # Si no coincide nada, se va a "Varios" (índice 20)
                      idx = LISTA_CATEGORIAS.index("Varios")
 
                 vcat = c5.selectbox("Categoría", LISTA_CATEGORIAS, index=idx)
@@ -357,8 +365,10 @@ with tab_nuevo:
                 with st.expander("📍 Geolocalización y Notas"):
                     vu = st.text_input("Sucursal", data.get("ubicacion",""))
                     vdet = st.text_input("Concepto / Periodo", data.get("detalles",""))
-                    vlat = float(data.get("latitud", 0.0))
-                    vlon = float(data.get("longitud", 0.0))
+                    
+                    # CORRECCIÓN DEL ERROR TYPE ERROR (AQUI ESTÁ LA SOLUCIÓN)
+                    vlat = safe_float(data.get("latitud"))
+                    vlon = safe_float(data.get("longitud"))
 
                 if st.button("💾 Guardar Transacción", type="primary", use_container_width=True):
                     nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
