@@ -72,7 +72,7 @@ st.markdown("""
     .metric-value {font-size: 2rem; font-weight: 700; color: #0F172A;}
     .metric-label {font-size: 0.875rem; color: #64748B; font-weight: 500;}
     
-    /* Estilo para los Highlights (MEJORA AGREGADA) */
+    /* Estilo para los Highlights */
     .highlight-box {
         background-color: #F0F9FF;
         border-left: 5px solid #0284C7;
@@ -173,15 +173,15 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
-# (MEJORA AGREGADA: Categorías para Recibos)
+# LISTA ACTUALIZADA CON SERVICIOS Y PREDIAAL
 LISTA_CATEGORIAS = [
     "Alimentos y Supermercado", "Restaurantes y Bares", "Gasolina y Transporte",
-    "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)", # Actualizado
+    "Salud y Farmacia", "Hogar y Muebles", "Servicios (Luz/Agua/Internet)", 
     "Telefonía y Comunicaciones", "Ropa y Calzado", "Electrónica y Tecnología",
     "Entretenimiento y Cine", "Educación y Libros", "Mascotas",
     "Regalos y Detalles", "Viajes y Hoteles", "Suscripciones (Streaming)",
     "Cuidado Personal y Belleza", "Deportes y Gimnasio", "Oficina y Trabajo",
-    "Mantenimiento Automotriz", "Impuestos y Predial", "Varios" # Actualizado
+    "Mantenimiento Automotriz", "Impuestos y Predial", "Varios"
 ]
 
 # =======================================================
@@ -203,8 +203,7 @@ def analizar_ticket(imagen_pil):
     try:
         model = genai.GenerativeModel(modelo)
         cats_str = ", ".join(LISTA_CATEGORIAS)
-        
-        # (MEJORA AGREGADA: Prompt Inteligente para Recibos y Tickets)
+        # PROMPT MEJORADO PARA DETECTAR RECIBOS Y FECHAS DE PAGO
         prompt = f"""
         Analiza la imagen. Puede ser un TICKET DE COMPRA o un RECIBO DE SERVICIOS (Luz, Agua, Gas, Predial).
         
@@ -282,7 +281,6 @@ with st.sidebar:
         if sel_com: df_filtrado = df_filtrado[df_filtrado['Comercio'].isin(sel_com)]
     
     st.divider()
-    # SECCIÓN ARCO EN SIDEBAR
     with st.expander("🛡️ Derechos ARCO"):
         st.caption("Para ejercer sus derechos de Acceso, Rectificación, Cancelación u Oposición, contacte a:")
         st.markdown("**legal@smartreceipt.app**")
@@ -294,8 +292,6 @@ with st.sidebar:
 
 # --- MAIN CONTENT ---
 st.markdown('<h1 class="main-header">SmartReceipt <span style="font-weight:300;">Enterprise</span></h1>', unsafe_allow_html=True)
-
-[Image of financial dashboard layout with highlights section]
 
 if not df_filtrado.empty:
     m1, m2, m3, m4 = st.columns(4)
@@ -364,7 +360,7 @@ with tab_nuevo:
 
 with tab_dashboard:
     if not df_filtrado.empty:
-        # (MEJORA AGREGADA: Sección de Highlights)
+        # AQUI ESTAN LOS HIGHLIGHTS (NUEVA SECCIÓN)
         st.markdown("### 💡 Highlights del Periodo")
         hc1, hc2, hc3 = st.columns(3)
         
@@ -378,7 +374,6 @@ with tab_dashboard:
         with hc2:
             st.success(f"🛍️ **Categoría Top:**\n\n**{cat_top}** (${monto_cat:,.2f}).")
             
-        # Highlight de Servicios (Nuevo)
         servicios = df_filtrado[df_filtrado['Categoría'].str.contains("Servicios", case=False, na=False)]
         total_serv = servicios['Monto'].sum() if not servicios.empty else 0
         with hc3:
@@ -390,4 +385,66 @@ with tab_dashboard:
         chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
             x=alt.X('Monto', title='Monto Total'),
             y=alt.Y('Comercio', sort='-x'),
-            color=alt
+            color=alt.Color('Monto', scale={'scheme': 'blues'}),
+            tooltip=['Comercio', 'Monto', 'Fecha']
+        ).properties(height=300)
+        st.altair_chart(chart_bar, use_container_width=True)
+        
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            st.markdown("##### Distribución")
+            base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
+            pie = base.mark_arc(innerRadius=60).encode(
+                color=alt.Color("Categoría", scale={'scheme': 'tableau10'}),
+                tooltip=["Categoría", "Monto"]
+            )
+            st.altair_chart(pie, use_container_width=True)
+        with col_g2:
+            st.markdown("##### Historial Temporal")
+            if 'Fecha_dt' in df_filtrado.columns:
+                line = alt.Chart(df_filtrado).mark_line(point=True, interpolate='monotone').encode(
+                    x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto', 'Comercio']
+                )
+                st.altair_chart(line, use_container_width=True)
+
+        map_data = df_filtrado[(df_filtrado['lat']!=0)]
+        if not map_data.empty:
+            st.markdown("##### 🗺️ Mapa de Operaciones")
+            st.pydeck_chart(pdk.Deck(
+                map_style=None,
+                initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
+                layers=[pdk.Layer(
+                    "ScatterplotLayer",
+                    data=map_data,
+                    get_position='[lon, lat]',
+                    get_color=[15, 23, 42, 200],
+                    get_radius=200,
+                    pickable=True
+                )],
+                tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
+            ))
+                
+        with st.expander("📂 Exportar Datos"):
+            st.dataframe(df_filtrado, use_container_width=True)
+    else: st.info("No hay datos disponibles para los filtros seleccionados.")
+
+with tab_chat:
+    st.caption("Asistente financiero potenciado por Gemini 1.5. Pregunta sobre patrones de gasto.")
+    for m in st.session_state['chat_history']:
+        with st.chat_message(m["role"]): st.markdown(m["content"])
+    if q := st.chat_input("Ej: ¿Cuál fue mi gasto más alto en Restaurantes?"):
+        with st.chat_message("user"): st.markdown(q)
+        st.session_state['chat_history'].append({"role":"user", "content":q})
+        if df_filtrado.empty: r = "Sin datos."
+        else:
+            with st.spinner("Analizando..."): r = consultar_chat_financiero(q, df_filtrado)
+        with st.chat_message("assistant"): st.markdown(r)
+        st.session_state['chat_history'].append({"role":"assistant", "content":r})
+
+# FOOTER
+st.markdown("""
+<div style="text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;">
+    SmartReceipt Inc. © 2026 | Cumplimiento LFPDPPP | 
+    <a href="#" style="color: #64748b;">Privacidad</a>
+</div>
+""", unsafe_allow_html=True)
