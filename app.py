@@ -59,7 +59,8 @@ TEXTOS = {
         "tab_dash": "📈 Dashboard BI",
         "tab_chat": "💬 AI Assistant",
         "legal_privacy": "**AVISO DE PRIVACIDAD:** Sus datos son usados para gestión de gastos.",
-        "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores."
+        "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores.",
+        "error_no_file": "⚠️ Por favor selecciona una imagen primero."
     },
     "EN": {
         "login_title": "Secure Access",
@@ -104,7 +105,8 @@ TEXTOS = {
         "tab_dash": "📈 BI Dashboard",
         "tab_chat": "💬 AI Assistant",
         "legal_privacy": "**PRIVACY POLICY:** Data used for expense management.",
-        "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes."
+        "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes.",
+        "error_no_file": "⚠️ Please select an image first."
     }
 }
 
@@ -269,7 +271,7 @@ def procesar_imagen_opencv(imagen_pil):
         enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(gray)
         return Image.fromarray(enhanced)
     except:
-        return imagen_pil # Fallback a imagen original si falla
+        return imagen_pil 
 
 def limpiar_json(texto_sucio):
     inicio = texto_sucio.find('{')
@@ -324,7 +326,41 @@ def safe_float(val):
     except: return 0.0
 
 # =======================================================
-# 6. DASHBOARD & UI
+# 6. CALLBACKS (LA CLAVE DEL BLINDAJE) 🛡️
+# =======================================================
+# Estas funciones se ejecutan ANTES de que la app se recargue.
+
+def cb_carga_manual():
+    st.session_state['temp_data'] = {
+        "comercio": "", "total": 0.0, "fecha": datetime.now().strftime("%d/%m/%Y"),
+        "hora": datetime.now().strftime("%H:%M"), "categoria": CATS_ACTUALES[0],
+        "ubicacion": "", "detalles": "Manual", "latitud": 0.0, "longitud": 0.0
+    }
+
+def cb_cancelar():
+    if 'temp_data' in st.session_state:
+        del st.session_state['temp_data']
+
+def cb_analizar_imagen():
+    # Accedemos directamente al archivo en el state del uploader
+    archivo = st.session_state.sidebar_uploader
+    if archivo is not None:
+        try:
+            img = Image.open(archivo)
+            img_proc = procesar_imagen_opencv(img)
+            txt, mod = analizar_ticket(img_proc, st.session_state.language)
+            txt_limpio = limpiar_json(txt)
+            if "Error" in txt: 
+                st.error(txt)
+            else:
+                st.session_state['temp_data'] = json.loads(txt_limpio)
+        except Exception as e:
+            st.error(f"Error AI: {e}")
+    else:
+        st.toast(T['error_no_file'])
+
+# =======================================================
+# 7. DASHBOARD & UI
 # =======================================================
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
@@ -335,7 +371,7 @@ if not df_local.empty:
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
-# --- SIDEBAR: EL CENTRO DE CONTROL BLINDADO ---
+# --- SIDEBAR BLINDADO ---
 with st.sidebar:
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; margin-bottom: 20px;">
@@ -352,37 +388,17 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(f"#### {T['upload_section']}")
     
-    # 1. CARGA MANUAL
-    if st.button(T['manual_btn'], use_container_width=True, key="side_manual_btn"):
-        st.session_state['temp_data'] = {
-            "comercio": "", "total": 0.0, "fecha": datetime.now().strftime("%d/%m/%Y"),
-            "hora": datetime.now().strftime("%H:%M"), "categoria": CATS_ACTUALES[0],
-            "ubicacion": "", "detalles": "Manual", "latitud": 0.0, "longitud": 0.0
-        }
-        st.rerun()
+    # 1. CARGA MANUAL (Con Callback)
+    st.button(T['manual_btn'], use_container_width=True, on_click=cb_carga_manual)
 
-    # 2. CARGA IMAGEN (BLINDADA AQUÍ)
-    archivo = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], label_visibility="collapsed", key="sidebar_uploader")
+    # 2. CARGA IMAGEN (Con Callback)
+    # Importante: El key 'sidebar_uploader' es lo que usa el callback para encontrar el archivo
+    uploaded_file = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], label_visibility="collapsed", key="sidebar_uploader")
     
-    if archivo:
-        # Previsualización pequeña en sidebar para confirmar que cargó
-        st.image(archivo, caption="Preview", use_container_width=True)
-        
-        # Botón Analizar
-        if st.button(T['analyze_btn'], type="primary", use_container_width=True, key="side_analyze_btn"):
-            with st.spinner("Nexus AI Processing..."):
-                try:
-                    img = Image.open(archivo)
-                    img_proc = procesar_imagen_opencv(img)
-                    txt, mod = analizar_ticket(img_proc, st.session_state.language)
-                    txt_limpio = limpiar_json(txt)
-                    if "Error" in txt: 
-                        st.error(txt)
-                    else:
-                        st.session_state['temp_data'] = json.loads(txt_limpio)
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Error AI: {e}")
+    if uploaded_file:
+        st.image(uploaded_file, caption="Preview", use_container_width=True)
+        # EL BOTÓN QUE LO CAMBIA TODO: Usa on_click para ejecutar antes del rerun
+        st.button(T['analyze_btn'], type="primary", use_container_width=True, on_click=cb_analizar_imagen)
 
     # --- RESTO DEL SIDEBAR ---
     st.markdown("---")
@@ -454,9 +470,8 @@ if 'temp_data' in st.session_state:
 
         col_acc1, col_acc2 = st.columns([1,1])
         with col_acc1:
-            if st.button(T['cancel_btn'], use_container_width=True, key="btn_cancel"):
-                del st.session_state['temp_data']
-                st.rerun()
+            st.button(T['cancel_btn'], use_container_width=True, on_click=cb_cancelar)
+            
         with col_acc2:
             if st.button(T['save_btn'], type="primary", use_container_width=True, key="btn_save"):
                 nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
