@@ -8,13 +8,12 @@ import json
 import re
 import os
 import altair as alt
-# import pydeck as pdk 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 # =======================================================
-# 1. CEREBRO BILINGÜE (TEXTOS ACTUALIZADOS) 🌍
+# 1. CEREBRO BILINGÜE (TEXTOS) 🌍
 # =======================================================
 TEXTOS = {
     "ES": {
@@ -43,14 +42,14 @@ TEXTOS = {
         "highlights_title": "💡 Estado Financiero",
         "highlight_max": "💸 Compra más grande",
         "highlight_top": "🛍️ Categoría Top",
-        "highlight_serv": "⚡ Servicios Básicos", # <-- FIJO
+        "highlight_serv": "⚡ Servicios Básicos",
         "budget_set": "⚙️ Configurar Presupuestos",   
         "budget_used": "Consumido Global",             
         "total_label": "Gasto Total",
         "trans_label": "Transacciones",
         "avg_label": "Ticket Promedio",
         "max_label": "Mayor Gasto",
-        "chart_budget_title": "📊 Presupuesto vs Gasto Real", # <-- NUEVO TITULO
+        "chart_budget_title": "📊 Presupuesto vs Gasto Real",
         "delete_title": "🗑️ Gestión de Registros",
         "delete_caption": "Selecciona un registro para eliminarlo permanentemente.",
         "delete_select": "Seleccionar Gasto a Eliminar",
@@ -86,14 +85,14 @@ TEXTOS = {
         "highlights_title": "💡 Financial Status",
         "highlight_max": "💸 Biggest Purchase",
         "highlight_top": "🛍️ Top Category",
-        "highlight_serv": "⚡ Basic Utilities",    # <-- FIJO
+        "highlight_serv": "⚡ Basic Utilities",
         "budget_set": "⚙️ Set Category Budgets",       
         "budget_used": "Global Used",                  
         "total_label": "Total Spend",
         "trans_label": "Transactions",
         "avg_label": "Avg Ticket",
         "max_label": "Top Expense",
-        "chart_budget_title": "📊 Budget vs Actual Spend", # <-- NUEVO TITULO
+        "chart_budget_title": "📊 Budget vs Actual Spend",
         "delete_title": "🗑️ Record Management",
         "delete_caption": "Select a record to delete permanently.",
         "delete_select": "Select Expense to Delete",
@@ -134,7 +133,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     html, body, [class*="css"] {font-family: 'Inter', sans-serif;}
     
-    /* --- BRANDING AJUSTADO --- */
     .main-header {
         background: linear-gradient(90deg, #0F172A 0%, #334155 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
@@ -171,9 +169,7 @@ if "language" not in st.session_state: st.session_state.language = "ES"
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "username" not in st.session_state: st.session_state.username = ""
 
-# --- INICIALIZACIÓN DE PRESUPUESTOS (DICCIONARIO) ---
 if "presupuestos" not in st.session_state: 
-    # Inicializa en 0 para todas las categorías actuales
     st.session_state.presupuestos = {cat: 0.0 for cat in CATEGORIAS["ES"]} 
 
 def login():
@@ -184,7 +180,6 @@ def login():
         t = TEXTOS[st.session_state.language]
 
         st.markdown("<br>", unsafe_allow_html=True)
-        # BRANDING EN LOGIN TAMBIÉN
         st.markdown("<h1 style='text-align: center; color: #0F172A; font-size: 2.5rem;'>SmartReceipt Enterprise</h1>", unsafe_allow_html=True)
         st.markdown("<h5 style='text-align: center; color: #64748B;'>by 🔷 Nexus Data Studios</h5>", unsafe_allow_html=True)
         
@@ -345,19 +340,15 @@ with st.sidebar:
         st.session_state.language = "ES" if lang_side == "Español" else "EN"
         st.rerun()
 
-    # --- SECCIÓN DE PRESUPUESTO POR CATEGORÍA ---
     st.divider()
     with st.expander(T['budget_set']):
-        # Recorremos las categorías actuales para pedir presupuesto de c/u
         presupuesto_total_calc = 0.0
         for cat in CATS_ACTUALES:
-            # Obtenemos el valor previo o 0.0
             val_prev = st.session_state.presupuestos.get(cat, 0.0)
             nuevo_val = st.number_input(f"{cat}", min_value=0.0, value=val_prev, step=100.0)
             st.session_state.presupuestos[cat] = nuevo_val
             presupuesto_total_calc += nuevo_val
     
-    # Guardamos la suma total para cálculos globales
     st.session_state.budget = presupuesto_total_calc
 
     st.divider()
@@ -386,110 +377,15 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.rerun()
 
-# --- BRANDING DE NEXUS DATA STUDIOS ---
+# --- BRANDING ---
 st.markdown('<h1 class="main-header">SmartReceipt Enterprise</h1>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', unsafe_allow_html=True)
 
-if not df_filtrado.empty:
-    m1, m2, m3, m4 = st.columns(4)
-    with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["total_label"]}</div><div class="metric-value" style="color:#0F172A">${df_filtrado["Monto"].sum():,.0f}</div></div>', unsafe_allow_html=True)
-    with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["trans_label"]}</div><div class="metric-value" style="color:#3B82F6">{len(df_filtrado)}</div></div>', unsafe_allow_html=True)
-    with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["avg_label"]}</div><div class="metric-value" style="color:#F59E0B">${df_filtrado["Monto"].mean():,.0f}</div></div>', unsafe_allow_html=True)
-    with m4:
-        top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "-"
-        st.markdown(f'<div class="metric-card"><div class="metric-label">{T["max_label"]}</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
+tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
-    # --- BARRA DE PROGRESO DE PRESUPUESTO GLOBAL ---
-    total_gastado = df_filtrado["Monto"].sum()
-    presupuesto_global = st.session_state.budget # Suma de todas las categorías
-    
-    pct = total_gastado / presupuesto_global if presupuesto_global > 0 else 1.0
-    pct_bar = min(pct, 1.0)
-    
-    # --- HIGHLIGHTS SUPERIORES ---
-    st.markdown(f"### {T['highlights_title']}")
-    hc1, hc2, hc3 = st.columns(3)
-    
-    # 1. Compra más grande
-    idx_max = df_filtrado['Monto'].idxmax()
-    row_max = df_filtrado.loc[idx_max]
-    with hc1: st.info(f"{T['highlight_max']}:\n\n${row_max['Monto']:,.2f} - **{row_max['Comercio']}**")
-    
-    # 2. Categoría Top
-    cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
-    monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
-    with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
-    
-    # 3. Servicios Básicos (FIJO COMO PEDISTE) ⚡
-    # Buscamos 'Servicios' y 'Telefonía' o 'Utilities' y 'Phone'
-    mask_serv = df_filtrado['Categoría'].str.contains("Servicios|Utilities|Telefonía|Phone", case=False, na=False)
-    gastos_serv = df_filtrado[mask_serv]
-    total_serv = gastos_serv['Monto'].sum() if not gastos_serv.empty else 0.0
-    with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
-
-    st.markdown("---")
-    
-    # --- GRÁFICO NUEVO: PRESUPUESTO VS REALIDAD ---
-    # Preparamos los datos para el gráfico comparativo
-    gastos_por_cat = df_filtrado.groupby('Categoría')['Monto'].sum().reset_index()
-    gastos_por_cat.columns = ['Categoría', 'Gasto Real']
-    
-    # Creamos un DataFrame con los presupuestos
-    df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
-    
-    # Unimos ambos (Merge)
-    df_comparativo = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
-    
-    # Transformamos a formato largo (Long Format) para Altair
-    df_long = df_comparativo.melt('Categoría', var_name='Tipo', value_name='Monto')
-
-    st.markdown(f"##### {T['chart_budget_title']}")
-    
-    chart_comparativo = alt.Chart(df_long).mark_bar().encode(
-        x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)),
-        y='Monto',
-        color=alt.Color('Tipo', scale=alt.Scale(domain=['Presupuesto', 'Gasto Real'], range=['#CBD5E1', '#3B82F6'])),
-        tooltip=['Categoría', 'Tipo', 'Monto']
-    ).properties(height=350)
-    
-    st.altair_chart(chart_comparativo, use_container_width=True)
-
-    # Gráficos Secundarios (Barra y Pastel)
-    col_g1, col_g2 = st.columns(2)
-    with col_g1:
-        base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
-        pie = base.mark_arc(innerRadius=60).encode(
-            color=alt.Color("Categoría", scale={'scheme': 'tableau10'}), tooltip=["Categoría", "Monto"]
-        )
-        st.altair_chart(pie, use_container_width=True)
-    with col_g2:
-        if 'Fecha_dt' in df_filtrado.columns:
-            line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
-            st.altair_chart(line, use_container_width=True)
-
-    st.markdown(f"### {T['delete_title']}")
-    st.caption(T['delete_caption'])
-    opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
-    c_del1, c_del2 = st.columns([3,1])
-    with c_del1: 
-        sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()))
-    with c_del2: 
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button(T['delete_btn'], type="primary"):
-            idx_real = opciones_borrar[sel_del]
-            hoja = get_google_sheet()
-            if hoja:
-                try: 
-                    hoja.delete_rows(idx_real + 2)
-                    del st.session_state['gastos'][idx_real]
-                    st.toast(T['delete_success'], icon="🗑️")
-                    st.rerun()
-                except: st.error("Error DB")
-    
-    with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
-else: st.info("No data / Sin datos.")
-
+# =======================================================
+# TAB 1: NUEVO TICKET (Prioridad Alta - Movido Arriba)
+# =======================================================
 with tab_nuevo:
     col1, col2 = st.columns([1, 1], gap="large")
     with col1:
@@ -563,6 +459,103 @@ with tab_nuevo:
                     del st.session_state['temp_data']
                     st.rerun()
 
+# =======================================================
+# TAB 2: DASHBOARD (Ahora con Gráficos Blindados)
+# =======================================================
+with tab_dashboard:
+    if not df_filtrado.empty:
+        # MÉTRICAS GENERALES
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["total_label"]}</div><div class="metric-value" style="color:#0F172A">${df_filtrado["Monto"].sum():,.0f}</div></div>', unsafe_allow_html=True)
+        with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["trans_label"]}</div><div class="metric-value" style="color:#3B82F6">{len(df_filtrado)}</div></div>', unsafe_allow_html=True)
+        with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["avg_label"]}</div><div class="metric-value" style="color:#F59E0B">${df_filtrado["Monto"].mean():,.0f}</div></div>', unsafe_allow_html=True)
+        with m4:
+            top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "-"
+            st.markdown(f'<div class="metric-card"><div class="metric-label">{T["max_label"]}</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # BARRA PROGRESO GLOBAL
+        total_gastado = df_filtrado["Monto"].sum()
+        presupuesto_global = st.session_state.budget 
+        pct = total_gastado / presupuesto_global if presupuesto_global > 0 else 1.0
+        pct_bar = min(pct, 1.0)
+        
+        # HIGHLIGHTS
+        st.markdown(f"### {T['highlights_title']}")
+        hc1, hc2, hc3 = st.columns(3)
+        
+        idx_max = df_filtrado['Monto'].idxmax()
+        row_max = df_filtrado.loc[idx_max]
+        with hc1: st.info(f"{T['highlight_max']}:\n\n${row_max['Monto']:,.2f} - **{row_max['Comercio']}**")
+        
+        cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
+        monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
+        with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
+        
+        mask_serv = df_filtrado['Categoría'].str.contains("Servicios|Utilities|Telefonía|Phone", case=False, na=False)
+        gastos_serv = df_filtrado[mask_serv]
+        total_serv = gastos_serv['Monto'].sum() if not gastos_serv.empty else 0.0
+        with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
+
+        st.markdown("---")
+        
+        # GRÁFICO NUEVO: PRESUPUESTO VS REALIDAD (CON BLINDAJE)
+        st.markdown(f"##### {T['chart_budget_title']}")
+        try:
+            gastos_por_cat = df_filtrado.groupby('Categoría')['Monto'].sum().reset_index()
+            gastos_por_cat.columns = ['Categoría', 'Gasto Real']
+            df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
+            df_comparativo = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
+            df_long = df_comparativo.melt('Categoría', var_name='Tipo', value_name='Monto')
+
+            chart_comparativo = alt.Chart(df_long).mark_bar().encode(
+                x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)),
+                y='Monto',
+                color=alt.Color('Tipo', scale=alt.Scale(domain=['Presupuesto', 'Gasto Real'], range=['#CBD5E1', '#3B82F6'])),
+                tooltip=['Categoría', 'Tipo', 'Monto']
+            ).properties(height=350)
+            st.altair_chart(chart_comparativo, use_container_width=True)
+        except Exception as e:
+            st.warning("⚠️ No hay suficientes datos aún para generar la comparativa de presupuestos.")
+
+        # Gráficos Secundarios
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
+            pie = base.mark_arc(innerRadius=60).encode(
+                color=alt.Color("Categoría", scale={'scheme': 'tableau10'}), tooltip=["Categoría", "Monto"]
+            )
+            st.altair_chart(pie, use_container_width=True)
+        with col_g2:
+            if 'Fecha_dt' in df_filtrado.columns:
+                line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
+                st.altair_chart(line, use_container_width=True)
+
+        st.markdown(f"### {T['delete_title']}")
+        st.caption(T['delete_caption'])
+        opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
+        c_del1, c_del2 = st.columns([3,1])
+        with c_del1: 
+            sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()))
+        with c_del2: 
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(T['delete_btn'], type="primary"):
+                idx_real = opciones_borrar[sel_del]
+                hoja = get_google_sheet()
+                if hoja:
+                    try: 
+                        hoja.delete_rows(idx_real + 2)
+                        del st.session_state['gastos'][idx_real]
+                        st.toast(T['delete_success'], icon="🗑️")
+                        st.rerun()
+                    except: st.error("Error DB")
+        
+        with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
+    else: st.info("No data / Sin datos.")
+
+# =======================================================
+# TAB 3: CHAT
+# =======================================================
 with tab_chat:
     for m in st.session_state['chat_history']:
         with st.chat_message(m["role"]): st.markdown(m["content"])
