@@ -8,7 +8,7 @@ import json
 import re
 import os
 import altair as alt
-# import pydeck as pdk  <-- ELIMINADO (Ya no usaremos mapas visuales)
+# import pydeck as pdk 
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
@@ -43,9 +43,9 @@ TEXTOS = {
         "highlights_title": "💡 Estado Financiero",
         "highlight_max": "💸 Compra más grande",
         "highlight_top": "🛍️ Categoría Top",
-        "highlight_budget": "💰 Presupuesto Restante",  # <-- NUEVO
-        "budget_set": "🎯 Definir Presupuesto ($)",    # <-- NUEVO
-        "budget_used": "Consumido",                    # <-- NUEVO
+        "highlight_budget": "💰 Presupuesto Restante", 
+        "budget_set": "⚙️ Configurar Presupuestos",   # <-- ACTUALIZADO
+        "budget_used": "Consumido Global",             
         "total_label": "Gasto Total",
         "trans_label": "Transacciones",
         "avg_label": "Ticket Promedio",
@@ -85,9 +85,9 @@ TEXTOS = {
         "highlights_title": "💡 Financial Status",
         "highlight_max": "💸 Biggest Purchase",
         "highlight_top": "🛍️ Top Category",
-        "highlight_budget": "💰 Remaining Budget",    # <-- NUEVO
-        "budget_set": "🎯 Set Budget ($)",             # <-- NUEVO
-        "budget_used": "Used",                         # <-- NUEVO
+        "highlight_budget": "💰 Remaining Budget",    
+        "budget_set": "⚙️ Set Category Budgets",       # <-- ACTUALIZADO
+        "budget_used": "Global Used",                  
         "total_label": "Total Spend",
         "trans_label": "Transactions",
         "avg_label": "Avg Ticket",
@@ -132,19 +132,22 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     html, body, [class*="css"] {font-family: 'Inter', sans-serif;}
     
-    /* NUEVO ENCABEZADO CON BRANDING */
+    /* --- BRANDING AJUSTADO --- */
     .main-header {
         background: linear-gradient(90deg, #0F172A 0%, #334155 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-weight: 800; font-size: 3rem; padding-bottom: 5px;
-        line-height: 1.2;
+        font-weight: 800; 
+        font-size: 3.5rem; /* Más grande */
+        padding-bottom: 0px;
+        line-height: 1.1;
     }
     .sub-header {
         color: #64748B;
-        font-size: 1.2rem;
-        font-weight: 500;
-        margin-top: -10px;
-        margin-bottom: 20px;
+        font-size: 1rem; /* Más discreto */
+        font-weight: 400;
+        margin-top: 5px;
+        margin-bottom: 25px;
+        letter-spacing: 1px;
     }
     
     .metric-card {
@@ -165,8 +168,11 @@ st.markdown("""
 if "language" not in st.session_state: st.session_state.language = "ES"
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "username" not in st.session_state: st.session_state.username = ""
-# Inicializar presupuesto si no existe
-if "budget" not in st.session_state: st.session_state.budget = 10000.0
+
+# --- INICIALIZACIÓN DE PRESUPUESTOS (DICCIONARIO) ---
+if "presupuestos" not in st.session_state: 
+    # Inicializa en 0 para todas las categorías actuales
+    st.session_state.presupuestos = {cat: 0.0 for cat in CATEGORIAS["ES"]} 
 
 def login():
     c1, c2, c3 = st.columns([1,2,1])
@@ -176,9 +182,9 @@ def login():
         t = TEXTOS[st.session_state.language]
 
         st.markdown("<br>", unsafe_allow_html=True)
-        # LOGO O TITULO EN LOGIN
-        st.markdown("<h1 style='text-align: center; color: #0F172A;'>🔷 Nexus Data Studios</h1>", unsafe_allow_html=True)
-        st.markdown("<h3 style='text-align: center; color: #64748B;'>SmartReceipt Enterprise</h3>", unsafe_allow_html=True)
+        # BRANDING EN LOGIN TAMBIÉN
+        st.markdown("<h1 style='text-align: center; color: #0F172A; font-size: 2.5rem;'>SmartReceipt Enterprise</h1>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: #64748B;'>by 🔷 Nexus Data Studios</h5>", unsafe_allow_html=True)
         
         with st.container(border=True):
             st.markdown(f"### {t['login_title']}")
@@ -337,13 +343,20 @@ with st.sidebar:
         st.session_state.language = "ES" if lang_side == "Español" else "EN"
         st.rerun()
 
-    # --- SECCIÓN DE PRESUPUESTO (NUEVO) ---
+    # --- SECCIÓN DE PRESUPUESTO POR CATEGORÍA (NUEVO) ---
     st.divider()
-    st.markdown(f"### {T['budget_set']}")
-    presupuesto_input = st.number_input("Budget", min_value=1.0, value=st.session_state.budget, step=500.0, label_visibility="collapsed")
-    if presupuesto_input != st.session_state.budget:
-        st.session_state.budget = presupuesto_input
-        st.rerun()
+    with st.expander(T['budget_set']):
+        # Recorremos las categorías actuales para pedir presupuesto de c/u
+        presupuesto_total_calc = 0.0
+        for cat in CATS_ACTUALES:
+            # Obtenemos el valor previo o 0.0
+            val_prev = st.session_state.presupuestos.get(cat, 0.0)
+            nuevo_val = st.number_input(f"{cat}", min_value=0.0, value=val_prev, step=100.0)
+            st.session_state.presupuestos[cat] = nuevo_val
+            presupuesto_total_calc += nuevo_val
+    
+    # Guardamos la suma total para cálculos globales
+    st.session_state.budget = presupuesto_total_calc
 
     st.divider()
     if st.button(T['sync_btn'], use_container_width=True):
@@ -387,14 +400,25 @@ if not df_filtrado.empty:
 
     # --- BARRA DE PROGRESO DE PRESUPUESTO ---
     total_gastado = df_filtrado["Monto"].sum()
-    presupuesto = st.session_state.budget
-    pct = total_gastado / presupuesto if presupuesto > 0 else 1.0
+    presupuesto_global = st.session_state.budget # Suma de todas las categorías
+    
+    # Cálculo para visualización
+    pct = total_gastado / presupuesto_global if presupuesto_global > 0 else 1.0
     pct_bar = min(pct, 1.0)
     
-    st.markdown(f"**{T['budget_used']}:** {pct*100:.1f}%")
-    st.progress(pct_bar)
-    if pct > 1.0:
-        st.error(f"⚠️ **ALERTA:** Has excedido tu presupuesto por ${total_gastado - presupuesto:,.2f}")
+    # Highlight de Remanente
+    restante = presupuesto_global - total_gastado
+    
+    # Mostramos métricas de presupuesto
+    bp1, bp2 = st.columns([3,1])
+    with bp1:
+        st.markdown(f"**{T['budget_used']}:** {pct*100:.1f}% (${total_gastado:,.0f} / ${presupuesto_global:,.0f})")
+        st.progress(pct_bar)
+    with bp2:
+        if restante >= 0:
+            st.success(f"💰 Sobran: **${restante:,.2f}**")
+        else:
+            st.error(f"⚠️ Exceso: **-${abs(restante):,.2f}**")
 
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
@@ -484,12 +508,13 @@ with tab_dashboard:
         monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
         with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
         
-        # --- HIGHLIGHT NUEVO: PRESUPUESTO RESTANTE ---
+        # Highlight de Remanente Global
         restante = st.session_state.budget - df_filtrado["Monto"].sum()
-        if restante >= 0:
-            with hc3: st.success(f"{T['highlight_budget']}:\n\n**${restante:,.2f}** (OK)")
-        else:
-            with hc3: st.error(f"{T['highlight_budget']}:\n\n**-${abs(restante):,.2f}** (OVER)")
+        with hc3:
+            if restante >= 0:
+                st.success(f"{T['highlight_budget']}:\n\n**${restante:,.2f}**")
+            else:
+                st.error(f"{T['highlight_budget']}:\n\n**-${abs(restante):,.2f}** (Over)")
         
         st.markdown("---")
         chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
