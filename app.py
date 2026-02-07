@@ -288,9 +288,9 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
 # =======================================================
-# 5. GENERADOR DE REPORTES PDF 📄
+# 5. GENERADOR DE REPORTES PDF 📄 (ACTUALIZADO)
 # =======================================================
-def generar_reporte_pdf(df_datos, usuario):
+def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     elements = []
@@ -304,25 +304,53 @@ def generar_reporte_pdf(df_datos, usuario):
     
     normal_style = styles['Normal']
     elements.append(Paragraph(f"<b>Usuario:</b> {usuario}", normal_style))
+    elements.append(Paragraph(f"<b>Periodo del Reporte:</b> {periodo_texto}", normal_style)) # NUEVA LINEA DE PERIODO
     elements.append(Paragraph(f"<b>Fecha de Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", normal_style))
     elements.append(Paragraph(f"<b>Total del Periodo:</b> ${df_datos['Monto'].sum():,.2f}", normal_style))
     elements.append(Spacer(1, 20))
     
-    # 2. RESUMEN POR CATEGORÍA (TABLA DE CONTADOR)
-    elements.append(Paragraph("<b>Resumen Fiscal por Categoría</b>", styles['Heading2']))
+    # 2. RESUMEN FISCAL (CON PRESUPUESTOS Y BALANCE)
+    elements.append(Paragraph("<b>Resumen Presupuestal por Categoría</b>", styles['Heading2']))
     elements.append(Spacer(1, 10))
     
-    resumen = df_datos.groupby('Categoría')['Monto'].sum().reset_index()
-    data_resumen = [['Categoría', 'Monto Total']] + resumen.values.tolist()
+    # Agrupar datos
+    agrupado = df_datos.groupby('Categoría')['Monto'].sum().reset_index()
     
-    t_resumen = Table(data_resumen, colWidths=[300, 150])
+    # Preparar datos de la tabla (Encabezados + Filas)
+    # Columnas: Categoría | Gasto Real | Presupuesto | Estado (Balance)
+    data_resumen = [['Categoría', 'Gasto Real', 'Presupuesto', 'Balance']]
+    
+    for index, row in agrupado.iterrows():
+        cat = row['Categoría']
+        gasto = row['Monto']
+        # Obtener presupuesto (default 0 si no existe)
+        presupuesto = presupuestos_dict.get(cat, 0.0)
+        diferencia = presupuesto - gasto
+        
+        # Lógica de Balance
+        if presupuesto == 0:
+            status = "Sin Presupuesto"
+        elif diferencia >= 0:
+            status = f"✅ (+${diferencia:,.0f})" # A favor
+        else:
+            status = f"⚠️ Excedido (-${abs(diferencia):,.0f})" # En contra
+            
+        data_resumen.append([
+            cat, 
+            f"${gasto:,.2f}", 
+            f"${presupuesto:,.2f}", 
+            status
+        ])
+    
+    # Crear Tabla
+    t_resumen = Table(data_resumen, colWidths=[200, 100, 100, 120])
     t_resumen.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3B82F6')),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3B82F6')), # Azul encabezado
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F1F5F9')),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F1F5F9')), # Gris filas
         ('GRID', (0,0), (-1,-1), 1, colors.white)
     ]))
     elements.append(t_resumen)
@@ -455,6 +483,7 @@ with st.sidebar:
     st.session_state.budget = presupuesto_total_calc
 
     st.markdown(f"### {T['filters']}")
+    sel_mes = [] # Inicializar
     if not df_local.empty:
         opts_mes = sorted([x for x in df_local['Mes_Año'].unique() if str(x) != 'nan'], reverse=True)
         sel_mes = st.multiselect(T['period'], opts_mes)
@@ -471,7 +500,14 @@ with st.sidebar:
     if not df_filtrado.empty:
         # BOTÓN 1: PDF EJECUTIVO
         if HAS_REPORTLAB:
-            pdf_data = generar_reporte_pdf(df_filtrado, st.session_state.username)
+            # DETERMINAR TEXTO DEL PERIODO
+            if sel_mes:
+                periodo_str = ", ".join(sel_mes)
+            else:
+                periodo_str = "Periodo Global (Todos los tiempos)"
+            
+            # PASAR DATOS Y PRESUPUESTOS AL PDF
+            pdf_data = generar_reporte_pdf(df_filtrado, st.session_state.username, periodo_str, st.session_state.presupuestos)
             st.download_button(label=T['download_pdf'], data=pdf_data, file_name="Reporte_Nexus.pdf", mime="application/pdf")
         else:
             st.warning(T['report_error'])
@@ -666,20 +702,20 @@ with tab_dashboard:
         opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
         c_del1, c_del2 = st.columns([3,1])
         with c_del1: 
-            sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()), key="sel_delete")
-        with c_del2: 
+            sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()), key="sel_del")
+        with c_del2:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button(T['delete_btn'], type="primary", key="btn_delete"):
                 idx_real = opciones_borrar[sel_del]
                 hoja = get_google_sheet()
                 if hoja:
-                    try: 
+                    try:
                         hoja.delete_rows(idx_real + 2)
                         del st.session_state['gastos'][idx_real]
                         st.toast(T['delete_success'], icon="🗑️")
                         st.rerun()
                     except: st.error("Error DB")
-        
+
         with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
     else: st.info("No data / Sin datos.")
 
@@ -694,10 +730,10 @@ with tab_chat:
         st.session_state['chat_history'].append({"role":"user", "content":q})
         if df_filtrado.empty: r = "No data."
         else:
-            with st.spinner("AI Thinking..."): 
-                r = consultar_chat_financiero(q, df_filtrado, st.session_state.language) 
-            with st.chat_message("assistant"): st.markdown(r)
-            st.session_state['chat_history'].append({"role":"assistant", "content":r})
+             with st.spinner("AI Thinking..."):
+                 r = consultar_chat_financiero(q, df_filtrado, st.session_state.language)
+             with st.chat_message("assistant"): st.markdown(r)
+             st.session_state['chat_history'].append({"role":"assistant", "content":r})
 
 # FOOTER
 st.markdown("<div style='text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;'>SmartReceipt Enterprise by Nexus Data Studios © 2026</div>", unsafe_allow_html=True)
