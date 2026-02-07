@@ -43,13 +43,14 @@ TEXTOS = {
         "highlights_title": "💡 Estado Financiero",
         "highlight_max": "💸 Compra más grande",
         "highlight_top": "🛍️ Categoría Top",
-        "highlight_budget": "💰 Presupuesto Restante", 
-        "budget_set": "⚙️ Configurar Presupuestos",   # <-- ACTUALIZADO
+        "highlight_serv": "⚡ Servicios Básicos", # <-- FIJO
+        "budget_set": "⚙️ Configurar Presupuestos",   
         "budget_used": "Consumido Global",             
         "total_label": "Gasto Total",
         "trans_label": "Transacciones",
         "avg_label": "Ticket Promedio",
         "max_label": "Mayor Gasto",
+        "chart_budget_title": "📊 Presupuesto vs Gasto Real", # <-- NUEVO TITULO
         "delete_title": "🗑️ Gestión de Registros",
         "delete_caption": "Selecciona un registro para eliminarlo permanentemente.",
         "delete_select": "Seleccionar Gasto a Eliminar",
@@ -85,13 +86,14 @@ TEXTOS = {
         "highlights_title": "💡 Financial Status",
         "highlight_max": "💸 Biggest Purchase",
         "highlight_top": "🛍️ Top Category",
-        "highlight_budget": "💰 Remaining Budget",    
-        "budget_set": "⚙️ Set Category Budgets",       # <-- ACTUALIZADO
+        "highlight_serv": "⚡ Basic Utilities",    # <-- FIJO
+        "budget_set": "⚙️ Set Category Budgets",       
         "budget_used": "Global Used",                  
         "total_label": "Total Spend",
         "trans_label": "Transactions",
         "avg_label": "Avg Ticket",
         "max_label": "Top Expense",
+        "chart_budget_title": "📊 Budget vs Actual Spend", # <-- NUEVO TITULO
         "delete_title": "🗑️ Record Management",
         "delete_caption": "Select a record to delete permanently.",
         "delete_select": "Select Expense to Delete",
@@ -137,13 +139,13 @@ st.markdown("""
         background: linear-gradient(90deg, #0F172A 0%, #334155 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         font-weight: 800; 
-        font-size: 3.5rem; /* Más grande */
+        font-size: 3.5rem; 
         padding-bottom: 0px;
         line-height: 1.1;
     }
     .sub-header {
         color: #64748B;
-        font-size: 1rem; /* Más discreto */
+        font-size: 1rem; 
         font-weight: 400;
         margin-top: 5px;
         margin-bottom: 25px;
@@ -343,7 +345,7 @@ with st.sidebar:
         st.session_state.language = "ES" if lang_side == "Español" else "EN"
         st.rerun()
 
-    # --- SECCIÓN DE PRESUPUESTO POR CATEGORÍA (NUEVO) ---
+    # --- SECCIÓN DE PRESUPUESTO POR CATEGORÍA ---
     st.divider()
     with st.expander(T['budget_set']):
         # Recorremos las categorías actuales para pedir presupuesto de c/u
@@ -398,29 +400,95 @@ if not df_filtrado.empty:
         st.markdown(f'<div class="metric-card"><div class="metric-label">{T["max_label"]}</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # --- BARRA DE PROGRESO DE PRESUPUESTO ---
+    # --- BARRA DE PROGRESO DE PRESUPUESTO GLOBAL ---
     total_gastado = df_filtrado["Monto"].sum()
     presupuesto_global = st.session_state.budget # Suma de todas las categorías
     
-    # Cálculo para visualización
     pct = total_gastado / presupuesto_global if presupuesto_global > 0 else 1.0
     pct_bar = min(pct, 1.0)
     
-    # Highlight de Remanente
-    restante = presupuesto_global - total_gastado
+    # --- HIGHLIGHTS SUPERIORES ---
+    st.markdown(f"### {T['highlights_title']}")
+    hc1, hc2, hc3 = st.columns(3)
     
-    # Mostramos métricas de presupuesto
-    bp1, bp2 = st.columns([3,1])
-    with bp1:
-        st.markdown(f"**{T['budget_used']}:** {pct*100:.1f}% (${total_gastado:,.0f} / ${presupuesto_global:,.0f})")
-        st.progress(pct_bar)
-    with bp2:
-        if restante >= 0:
-            st.success(f"💰 Sobran: **${restante:,.2f}**")
-        else:
-            st.error(f"⚠️ Exceso: **-${abs(restante):,.2f}**")
+    # 1. Compra más grande
+    idx_max = df_filtrado['Monto'].idxmax()
+    row_max = df_filtrado.loc[idx_max]
+    with hc1: st.info(f"{T['highlight_max']}:\n\n${row_max['Monto']:,.2f} - **{row_max['Comercio']}**")
+    
+    # 2. Categoría Top
+    cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
+    monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
+    with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
+    
+    # 3. Servicios Básicos (FIJO COMO PEDISTE) ⚡
+    # Buscamos 'Servicios' y 'Telefonía' o 'Utilities' y 'Phone'
+    mask_serv = df_filtrado['Categoría'].str.contains("Servicios|Utilities|Telefonía|Phone", case=False, na=False)
+    gastos_serv = df_filtrado[mask_serv]
+    total_serv = gastos_serv['Monto'].sum() if not gastos_serv.empty else 0.0
+    with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
 
-tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
+    st.markdown("---")
+    
+    # --- GRÁFICO NUEVO: PRESUPUESTO VS REALIDAD ---
+    # Preparamos los datos para el gráfico comparativo
+    gastos_por_cat = df_filtrado.groupby('Categoría')['Monto'].sum().reset_index()
+    gastos_por_cat.columns = ['Categoría', 'Gasto Real']
+    
+    # Creamos un DataFrame con los presupuestos
+    df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
+    
+    # Unimos ambos (Merge)
+    df_comparativo = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
+    
+    # Transformamos a formato largo (Long Format) para Altair
+    df_long = df_comparativo.melt('Categoría', var_name='Tipo', value_name='Monto')
+
+    st.markdown(f"##### {T['chart_budget_title']}")
+    
+    chart_comparativo = alt.Chart(df_long).mark_bar().encode(
+        x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)),
+        y='Monto',
+        color=alt.Color('Tipo', scale=alt.Scale(domain=['Presupuesto', 'Gasto Real'], range=['#CBD5E1', '#3B82F6'])),
+        tooltip=['Categoría', 'Tipo', 'Monto']
+    ).properties(height=350)
+    
+    st.altair_chart(chart_comparativo, use_container_width=True)
+
+    # Gráficos Secundarios (Barra y Pastel)
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
+        pie = base.mark_arc(innerRadius=60).encode(
+            color=alt.Color("Categoría", scale={'scheme': 'tableau10'}), tooltip=["Categoría", "Monto"]
+        )
+        st.altair_chart(pie, use_container_width=True)
+    with col_g2:
+        if 'Fecha_dt' in df_filtrado.columns:
+            line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
+            st.altair_chart(line, use_container_width=True)
+
+    st.markdown(f"### {T['delete_title']}")
+    st.caption(T['delete_caption'])
+    opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
+    c_del1, c_del2 = st.columns([3,1])
+    with c_del1: 
+        sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()))
+    with c_del2: 
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button(T['delete_btn'], type="primary"):
+            idx_real = opciones_borrar[sel_del]
+            hoja = get_google_sheet()
+            if hoja:
+                try: 
+                    hoja.delete_rows(idx_real + 2)
+                    del st.session_state['gastos'][idx_real]
+                    st.toast(T['delete_success'], icon="🗑️")
+                    st.rerun()
+                except: st.error("Error DB")
+    
+    with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
+else: st.info("No data / Sin datos.")
 
 with tab_nuevo:
     col1, col2 = st.columns([1, 1], gap="large")
@@ -482,7 +550,6 @@ with tab_nuevo:
                 with st.expander("📝 Details", expanded=True):
                     vu = st.text_input("Location", data.get("ubicacion",""))
                     vdet = st.text_input("Details", data.get("detalles",""))
-                    # (Variables GPS ocultas pero guardadas)
                     vlat = 0.0 
                     vlon = 0.0
 
@@ -495,67 +562,6 @@ with tab_nuevo:
                         except: pass
                     del st.session_state['temp_data']
                     st.rerun()
-
-with tab_dashboard:
-    if not df_filtrado.empty:
-        st.markdown(f"### {T['highlights_title']}")
-        hc1, hc2, hc3 = st.columns(3)
-        idx_max = df_filtrado['Monto'].idxmax()
-        row_max = df_filtrado.loc[idx_max]
-        with hc1: st.info(f"{T['highlight_max']}:\n\n${row_max['Monto']:,.2f} - **{row_max['Comercio']}**")
-        
-        cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
-        monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
-        with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
-        
-        # Highlight de Remanente Global
-        restante = st.session_state.budget - df_filtrado["Monto"].sum()
-        with hc3:
-            if restante >= 0:
-                st.success(f"{T['highlight_budget']}:\n\n**${restante:,.2f}**")
-            else:
-                st.error(f"{T['highlight_budget']}:\n\n**-${abs(restante):,.2f}** (Over)")
-        
-        st.markdown("---")
-        chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
-            x=alt.X('Monto', title='Total'), y=alt.Y('Comercio', sort='-x'),
-            color=alt.Color('Monto', scale={'scheme': 'blues'}), tooltip=['Comercio', 'Monto']
-        ).properties(height=300)
-        st.altair_chart(chart_bar, use_container_width=True)
-        
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
-            pie = base.mark_arc(innerRadius=60).encode(
-                color=alt.Color("Categoría", scale={'scheme': 'tableau10'}), tooltip=["Categoría", "Monto"]
-            )
-            st.altair_chart(pie, use_container_width=True)
-        with col_g2:
-            if 'Fecha_dt' in df_filtrado.columns:
-                line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
-                st.altair_chart(line, use_container_width=True)
-
-        st.markdown(f"### {T['delete_title']}")
-        st.caption(T['delete_caption'])
-        opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
-        c_del1, c_del2 = st.columns([3,1])
-        with c_del1: 
-            sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()))
-        with c_del2: 
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button(T['delete_btn'], type="primary"):
-                idx_real = opciones_borrar[sel_del]
-                hoja = get_google_sheet()
-                if hoja:
-                    try: 
-                        hoja.delete_rows(idx_real + 2)
-                        del st.session_state['gastos'][idx_real]
-                        st.toast(T['delete_success'], icon="🗑️")
-                        st.rerun()
-                    except: st.error("Error DB")
-        
-        with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
-    else: st.info("No data / Sin datos.")
 
 with tab_chat:
     for m in st.session_state['chat_history']:
