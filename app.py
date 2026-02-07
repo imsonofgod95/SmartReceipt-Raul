@@ -49,7 +49,7 @@ TEXTOS = {
         "trans_label": "Transacciones",
         "avg_label": "Ticket Promedio",
         "max_label": "Mayor Gasto",
-        "chart_budget_title": "📊 Presupuesto vs Gasto Real",
+        "chart_budget_title": "📊 Control Presupuestal (Gasto vs Límite)", # <-- NUEVO TITULO
         "delete_title": "🗑️ Gestión de Registros",
         "delete_caption": "Selecciona un registro para eliminarlo permanentemente.",
         "delete_select": "Seleccionar Gasto a Eliminar",
@@ -92,7 +92,7 @@ TEXTOS = {
         "trans_label": "Transactions",
         "avg_label": "Avg Ticket",
         "max_label": "Top Expense",
-        "chart_budget_title": "📊 Budget vs Actual Spend",
+        "chart_budget_title": "📊 Budget Control (Spend vs Limit)", # <-- NUEVO TITULO
         "delete_title": "🗑️ Record Management",
         "delete_caption": "Select a record to delete permanently.",
         "delete_select": "Select Expense to Delete",
@@ -381,10 +381,11 @@ with st.sidebar:
 st.markdown('<h1 class="main-header">SmartReceipt Enterprise</h1>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', unsafe_allow_html=True)
 
+# **AQUÍ CREAMOS LAS PESTAÑAS ANTES DE USARLAS**
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
 # =======================================================
-# TAB 1: NUEVO TICKET (Prioridad Alta - Movido Arriba)
+# TAB 1: NUEVO TICKET
 # =======================================================
 with tab_nuevo:
     col1, col2 = st.columns([1, 1], gap="large")
@@ -460,7 +461,7 @@ with tab_nuevo:
                     st.rerun()
 
 # =======================================================
-# TAB 2: DASHBOARD (Ahora con Gráficos Blindados)
+# TAB 2: DASHBOARD
 # =======================================================
 with tab_dashboard:
     if not df_filtrado.empty:
@@ -499,22 +500,40 @@ with tab_dashboard:
 
         st.markdown("---")
         
-        # GRÁFICO NUEVO: PRESUPUESTO VS REALIDAD (CON BLINDAJE)
+        # --- GRÁFICO MEJORADO: LAYERED BAR CHART (PROGRESO) ---
         st.markdown(f"##### {T['chart_budget_title']}")
         try:
+            # 1. Datos de Gasto
             gastos_por_cat = df_filtrado.groupby('Categoría')['Monto'].sum().reset_index()
             gastos_por_cat.columns = ['Categoría', 'Gasto Real']
+            
+            # 2. Datos de Presupuesto
             df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
-            df_comparativo = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
-            df_long = df_comparativo.melt('Categoría', var_name='Tipo', value_name='Monto')
+            
+            # 3. Merge (Unir)
+            df_final = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
 
-            chart_comparativo = alt.Chart(df_long).mark_bar().encode(
-                x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)),
-                y='Monto',
-                color=alt.Color('Tipo', scale=alt.Scale(domain=['Presupuesto', 'Gasto Real'], range=['#CBD5E1', '#3B82F6'])),
-                tooltip=['Categoría', 'Tipo', 'Monto']
-            ).properties(height=350)
-            st.altair_chart(chart_comparativo, use_container_width=True)
+            # 4. CAPA 1: FONDO GRIS (PRESUPUESTO)
+            base = alt.Chart(df_final).encode(x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)))
+            
+            bar_presupuesto = base.mark_bar(color='#E2E8F0').encode(
+                y='Presupuesto',
+                tooltip=['Categoría', 'Presupuesto']
+            )
+
+            # 5. CAPA 2: FRENTE AZUL (GASTO)
+            bar_gasto = base.mark_bar(color='#3B82F6', opacity=0.9).encode(
+                y='Gasto Real',
+                tooltip=['Categoría', 'Gasto Real']
+            )
+            
+            # 6. COMBINAR
+            chart_layer = (bar_presupuesto + bar_gasto).properties(height=350)
+            
+            st.altair_chart(chart_layer, use_container_width=True)
+            
+            st.caption("ℹ️ La barra Gris es tu límite (Presupuesto). La barra Azul es lo que llevas gastado.")
+
         except Exception as e:
             st.warning("⚠️ No hay suficientes datos aún para generar la comparativa de presupuestos.")
 
