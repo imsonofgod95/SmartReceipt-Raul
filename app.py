@@ -11,6 +11,7 @@ import altair as alt
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+import io
 
 # =======================================================
 # 1. CEREBRO BILINGÜE (TEXTOS) 🌍
@@ -60,7 +61,7 @@ TEXTOS = {
         "tab_chat": "💬 AI Assistant",
         "legal_privacy": "**AVISO DE PRIVACIDAD:** Sus datos son usados para gestión de gastos.",
         "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores.",
-        "error_no_file": "⚠️ Por favor selecciona una imagen primero."
+        "error_no_file": "⚠️ Imagen no detectada en memoria. Intente subirla de nuevo."
     },
     "EN": {
         "login_title": "Secure Access",
@@ -106,7 +107,7 @@ TEXTOS = {
         "tab_chat": "💬 AI Assistant",
         "legal_privacy": "**PRIVACY POLICY:** Data used for expense management.",
         "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes.",
-        "error_no_file": "⚠️ Please select an image first."
+        "error_no_file": "⚠️ Image not found in memory. Please upload again."
     }
 }
 
@@ -263,13 +264,27 @@ if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 # 5. FUNCIONES CORE
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
+    """
+    MODIFICADO V42: EFECTO ESCÁNER AGRESIVO
+    Usa Adaptive Threshold para limpiar sombras y dejar blanco puro.
+    """
     try:
         img_np = np.array(imagen_pil)
         if img_np.shape[-1] == 4: img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
         else: img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        
+        # 1. Escala de grises
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-        enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(gray)
-        return Image.fromarray(enhanced)
+        
+        # 2. Suavizado ligero para reducir ruido antes del umbral
+        blur = cv2.GaussianBlur(gray, (5,5), 0)
+        
+        # 3. UMBRAL ADAPTATIVO (La magia del escáner)
+        #blockSize=11, C=2 son buenos valores estándar para documentos
+        thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                       cv2.THRESH_BINARY, 11, 2)
+        
+        return Image.fromarray(thresh)
     except:
         return imagen_pil 
 
@@ -305,20 +320,6 @@ def analizar_ticket(imagen_pil, idioma_actual):
         return response.text, modelo
     except Exception as e: return f"Error: {e}", modelo
 
-def consultar_chat_financiero(pregunta, datos_df, idioma_actual):
-    try:
-        mods = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        modelo = next((m for m in mods if 'flash' in m and '1.5' in m), mods[0] if mods else "gemini-1.5-flash")
-    except: modelo = "gemini-1.5-flash"
-    try:
-        model = genai.GenerativeModel(modelo)
-        datos_csv = datos_df.to_csv(index=False)
-        lang_prompt = "Answer in ENGLISH" if idioma_actual == "EN" else "Responde en ESPAÑOL"
-        prompt = f"Role: Financial Assistant. {lang_prompt}. Data: \n---\n{datos_csv}\n---\nQuery: {pregunta}"
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e: return f"Error Chat: {e}"
-
 def safe_float(val):
     try:
         if val is None or val == "" or str(val).strip().lower() == "null": return 0.0
@@ -326,9 +327,11 @@ def safe_float(val):
     except: return 0.0
 
 # =======================================================
-# 6. CALLBACKS (LA CLAVE DEL BLINDAJE) 🛡️
+# 6. CALLBACKS Y PERSISTENCIA (BLINDAJE TOTAL) 🛡️
 # =======================================================
-# Estas funciones se ejecutan ANTES de que la app se recargue.
+# Inicializar estado de imagen persistente
+if 'imagen_persistente' not in st.session_state:
+    st.session_state.imagen_persistente = None
 
 def cb_carga_manual():
     st.session_state['temp_data'] = {
@@ -340,14 +343,14 @@ def cb_carga_manual():
 def cb_cancelar():
     if 'temp_data' in st.session_state:
         del st.session_state['temp_data']
+    st.session_state.imagen_persistente = None # Limpiar imagen al cancelar
 
-def cb_analizar_imagen():
-    # Accedemos directamente al archivo en el state del uploader
-    archivo = st.session_state.sidebar_uploader
-    if archivo is not None:
+def cb_analizar_persistente():
+    # Usamos la imagen que YA está segura en session_state
+    if st.session_state.imagen_persistente is not None:
         try:
-            img = Image.open(archivo)
-            img_proc = procesar_imagen_opencv(img)
+            # Procesar la imagen guardada en memoria
+            img_proc = procesar_imagen_opencv(st.session_state.imagen_persistente)
             txt, mod = analizar_ticket(img_proc, st.session_state.language)
             txt_limpio = limpiar_json(txt)
             if "Error" in txt: 
@@ -388,17 +391,25 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(f"#### {T['upload_section']}")
     
-    # 1. CARGA MANUAL (Con Callback)
+    # 1. CARGA MANUAL
     st.button(T['manual_btn'], use_container_width=True, on_click=cb_carga_manual)
 
-    # 2. CARGA IMAGEN (Con Callback)
-    # Importante: El key 'sidebar_uploader' es lo que usa el callback para encontrar el archivo
+    # 2. CARGA IMAGEN (Lógica de Persistencia Inmediata)
     uploaded_file = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], label_visibility="collapsed", key="sidebar_uploader")
     
-    if uploaded_file:
-        st.image(uploaded_file, caption="Preview", use_container_width=True)
-        # EL BOTÓN QUE LO CAMBIA TODO: Usa on_click para ejecutar antes del rerun
-        st.button(T['analyze_btn'], type="primary", use_container_width=True, on_click=cb_analizar_imagen)
+    # TRUCO DE BLINDAJE: Si hay archivo nuevo, lo guardamos en persistente INMEDIATAMENTE
+    if uploaded_file is not None:
+        try:
+            # Convertimos a PIL y guardamos en session_state para que no se pierda
+            image_pil = Image.open(uploaded_file)
+            st.session_state.imagen_persistente = image_pil
+        except: pass
+    
+    # Mostramos lo que hay en memoria persistente, no solo lo del uploader
+    if st.session_state.imagen_persistente:
+        st.image(st.session_state.imagen_persistente, caption="Ready for AI", use_container_width=True)
+        # El botón analiza lo que hay en persistente
+        st.button(T['analyze_btn'], type="primary", use_container_width=True, on_click=cb_analizar_persistente)
 
     # --- RESTO DEL SIDEBAR ---
     st.markdown("---")
@@ -481,6 +492,7 @@ if 'temp_data' in st.session_state:
                     try: hoja.append_row(list(nuevo.values()))
                     except: pass
                 del st.session_state['temp_data']
+                st.session_state.imagen_persistente = None # Limpiar imagen tras guardar
                 st.rerun()
 
 # MODO 2: DASHBOARD & CHAT (Si NO hay datos temporales)
