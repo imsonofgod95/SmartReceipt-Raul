@@ -8,13 +8,13 @@ import json
 import re
 import os
 import altair as alt
-import pydeck as pdk 
+# import pydeck as pdk  <-- ELIMINADO (Ya no usaremos mapas visuales)
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 
 # =======================================================
-# 1. CEREBRO BILINGÜE (TEXTOS) 🌍
+# 1. CEREBRO BILINGÜE (TEXTOS ACTUALIZADOS) 🌍
 # =======================================================
 TEXTOS = {
     "ES": {
@@ -40,10 +40,12 @@ TEXTOS = {
         "manual_info": "¿Gasto sin comprobante? (Propinas, Taxis, etc.)",
         "analyze_btn": "⚡ Analizar con Gemini AI",
         "save_btn": "💾 Guardar Transacción",
-        "highlights_title": "💡 Highlights del Periodo",
+        "highlights_title": "💡 Estado Financiero",
         "highlight_max": "💸 Compra más grande",
         "highlight_top": "🛍️ Categoría Top",
-        "highlight_serv": "⚡ Gastos en Servicios",
+        "highlight_budget": "💰 Presupuesto Restante",  # <-- NUEVO
+        "budget_set": "🎯 Definir Presupuesto ($)",    # <-- NUEVO
+        "budget_used": "Consumido",                    # <-- NUEVO
         "total_label": "Gasto Total",
         "trans_label": "Transacciones",
         "avg_label": "Ticket Promedio",
@@ -80,10 +82,12 @@ TEXTOS = {
         "manual_info": "Expense without receipt? (Tips, Cabs, etc.)",
         "analyze_btn": "⚡ Analyze with Gemini AI",
         "save_btn": "💾 Save Transaction",
-        "highlights_title": "💡 Period Highlights",
+        "highlights_title": "💡 Financial Status",
         "highlight_max": "💸 Biggest Purchase",
         "highlight_top": "🛍️ Top Category",
-        "highlight_serv": "⚡ Utilities Expenses",
+        "highlight_budget": "💰 Remaining Budget",    # <-- NUEVO
+        "budget_set": "🎯 Set Budget ($)",             # <-- NUEVO
+        "budget_used": "Used",                         # <-- NUEVO
         "total_label": "Total Spend",
         "trans_label": "Transactions",
         "avg_label": "Avg Ticket",
@@ -121,17 +125,28 @@ CATEGORIAS = {
 # =======================================================
 # 2. CONFIGURACIÓN Y ESTILOS UI 🎨
 # =======================================================
-st.set_page_config(page_title="SmartReceipt Enterprise", layout="wide", page_icon="🌎")
+st.set_page_config(page_title="Nexus Data Studios", layout="wide", page_icon="🔷")
 
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     html, body, [class*="css"] {font-family: 'Inter', sans-serif;}
+    
+    /* NUEVO ENCABEZADO CON BRANDING */
     .main-header {
         background: linear-gradient(90deg, #0F172A 0%, #334155 100%);
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        font-weight: 800; font-size: 3rem; padding-bottom: 10px;
+        font-weight: 800; font-size: 3rem; padding-bottom: 5px;
+        line-height: 1.2;
     }
+    .sub-header {
+        color: #64748B;
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-top: -10px;
+        margin-bottom: 20px;
+    }
+    
     .metric-card {
         background-color: #ffffff; border: 1px solid #e2e8f0;
         border-radius: 12px; padding: 24px; text-align: center;
@@ -150,6 +165,8 @@ st.markdown("""
 if "language" not in st.session_state: st.session_state.language = "ES"
 if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "username" not in st.session_state: st.session_state.username = ""
+# Inicializar presupuesto si no existe
+if "budget" not in st.session_state: st.session_state.budget = 10000.0
 
 def login():
     c1, c2, c3 = st.columns([1,2,1])
@@ -159,7 +176,9 @@ def login():
         t = TEXTOS[st.session_state.language]
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<h1 style='text-align: center; color: #0F172A;'>🏢 SmartReceipt</h1>", unsafe_allow_html=True)
+        # LOGO O TITULO EN LOGIN
+        st.markdown("<h1 style='text-align: center; color: #0F172A;'>🔷 Nexus Data Studios</h1>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #64748B;'>SmartReceipt Enterprise</h3>", unsafe_allow_html=True)
         
         with st.container(border=True):
             st.markdown(f"### {t['login_title']}")
@@ -232,7 +251,7 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
 # =======================================================
-# 5. FUNCIONES CORE (IA & VISIÓN)
+# 5. FUNCIONES CORE
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
     img_np = np.array(imagen_pil)
@@ -242,17 +261,11 @@ def procesar_imagen_opencv(imagen_pil):
     enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8)).apply(gray)
     return Image.fromarray(enhanced)
 
-# --- FUNCIÓN QUIRÚRGICA PARA LIMPIAR JSON ---
 def limpiar_json(texto_sucio):
-    # Busca el primer corchete '{'
     inicio = texto_sucio.find('{')
-    # Busca el último corchete '}'
     fin = texto_sucio.rfind('}')
-    
-    if inicio != -1 and fin != -1:
-        return texto_sucio[inicio:fin+1]
-    else:
-        return texto_sucio # Devuelve igual si no encuentra, para que falle y lo detectemos
+    if inicio != -1 and fin != -1: return texto_sucio[inicio:fin+1]
+    else: return texto_sucio
 
 def analizar_ticket(imagen_pil, idioma_actual):
     try:
@@ -265,18 +278,16 @@ def analizar_ticket(imagen_pil, idioma_actual):
         instrucciones_idioma = "Output values in ENGLISH." if idioma_actual == "EN" else "Valores de texto en ESPAÑOL."
 
         prompt = f"""
-        Actúa como experto OCR y Geolocalización.
-        {instrucciones_idioma}
+        Actúa como experto OCR. {instrucciones_idioma}
         LISTA DE CATEGORÍAS: [{cats_str}]
         
         INSTRUCCIONES:
         1. Extrae: Comercio, Fecha (DD/MM/AAAA), Total, Hora.
-        2. DIRECCIÓN Y GPS: Busca cualquier indicio de dirección (Ciudad Satélite, Reforma, Polanco, etc.) y **ESTIMA** las coordenadas (lat/lon).
-        3. Si no encuentras dirección exacta, usa las coordenadas de la ciudad detectada.
-        4. JSON PURO: No incluyas markdown. Solo el objeto JSON.
+        2. DIRECCIÓN: Intenta extraer la dirección si es legible.
+        3. LAT/LON: Déjalos en 0.0, ya no son necesarios visualizar.
         
         JSON OBLIGATORIO: 
-        {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección", "latitud": 19.4326, "longitud": -99.1332, "categoria": "Texto", "detalles": "Texto"}}
+        {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección", "latitud": 0.0, "longitud": 0.0, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, modelo
@@ -326,12 +337,20 @@ with st.sidebar:
         st.session_state.language = "ES" if lang_side == "Español" else "EN"
         st.rerun()
 
+    # --- SECCIÓN DE PRESUPUESTO (NUEVO) ---
+    st.divider()
+    st.markdown(f"### {T['budget_set']}")
+    presupuesto_input = st.number_input("Budget", min_value=1.0, value=st.session_state.budget, step=500.0, label_visibility="collapsed")
+    if presupuesto_input != st.session_state.budget:
+        st.session_state.budget = presupuesto_input
+        st.rerun()
+
+    st.divider()
     if st.button(T['sync_btn'], use_container_width=True):
         st.cache_data.clear()
         if 'gastos' in st.session_state: del st.session_state['gastos'] 
         st.rerun()
     
-    st.divider()
     st.markdown(f"### {T['filters']}")
     
     if not df_local.empty:
@@ -352,7 +371,9 @@ with st.sidebar:
         st.session_state.logged_in = False
         st.rerun()
 
-st.markdown('<h1 class="main-header">SmartReceipt <span style="font-weight:300;">Global</span></h1>', unsafe_allow_html=True)
+# --- BRANDING DE NEXUS DATA STUDIOS ---
+st.markdown('<h1 class="main-header">SmartReceipt Enterprise</h1>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', unsafe_allow_html=True)
 
 if not df_filtrado.empty:
     m1, m2, m3, m4 = st.columns(4)
@@ -363,6 +384,17 @@ if not df_filtrado.empty:
         top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "-"
         st.markdown(f'<div class="metric-card"><div class="metric-label">{T["max_label"]}</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # --- BARRA DE PROGRESO DE PRESUPUESTO ---
+    total_gastado = df_filtrado["Monto"].sum()
+    presupuesto = st.session_state.budget
+    pct = total_gastado / presupuesto if presupuesto > 0 else 1.0
+    pct_bar = min(pct, 1.0)
+    
+    st.markdown(f"**{T['budget_used']}:** {pct*100:.1f}%")
+    st.progress(pct_bar)
+    if pct > 1.0:
+        st.error(f"⚠️ **ALERTA:** Has excedido tu presupuesto por ${total_gastado - presupuesto:,.2f}")
 
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
@@ -378,10 +410,7 @@ with tab_nuevo:
             if st.button(T['analyze_btn'], type="primary"):
                 with st.spinner("AI Working..."):
                     txt, mod = analizar_ticket(img_proc, st.session_state.language)
-                    
-                    # --- APLICAMOS LA FUNCIÓN QUIRÚRGICA ---
                     txt_limpio = limpiar_json(txt)
-                    
                     if "Error" in txt: st.error(txt)
                     else:
                         try:
@@ -389,9 +418,7 @@ with tab_nuevo:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error parsing JSON: {e}")
-                            # Mostrar el texto crudo para depurar si falla
-                            with st.expander("Ver respuesta cruda"):
-                                st.code(txt)
+                            with st.expander("Ver respuesta cruda"): st.code(txt)
         
         st.markdown("---")
         st.info(T['manual_info'])
@@ -424,18 +451,16 @@ with tab_nuevo:
                 idx = 0
                 if cat_def in CATS_ACTUALES:
                     idx = CATS_ACTUALES.index(cat_def)
-                else:
-                    idx = len(CATS_ACTUALES) - 1
+                else: idx = len(CATS_ACTUALES) - 1
                 
                 vcat = c5.selectbox(T['category'], CATS_ACTUALES, index=idx)
                 
-                with st.expander("📍 GPS & Notes", expanded=True):
+                with st.expander("📝 Details", expanded=True):
                     vu = st.text_input("Location", data.get("ubicacion",""))
                     vdet = st.text_input("Details", data.get("detalles",""))
-                    
-                    c_gps1, c_gps2 = st.columns(2)
-                    vlat = c_gps1.number_input("Lat", value=safe_float(data.get("latitud")), format="%.5f")
-                    vlon = c_gps2.number_input("Lon", value=safe_float(data.get("longitud")), format="%.5f")
+                    # (Variables GPS ocultas pero guardadas)
+                    vlat = 0.0 
+                    vlon = 0.0
 
                 if st.button(T['save_btn'], type="primary", use_container_width=True):
                     nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
@@ -459,9 +484,12 @@ with tab_dashboard:
         monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
         with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
         
-        servicios = df_filtrado[df_filtrado['Categoría'].str.contains("Servicios|Utilities", case=False, na=False)]
-        total_serv = servicios['Monto'].sum() if not servicios.empty else 0
-        with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
+        # --- HIGHLIGHT NUEVO: PRESUPUESTO RESTANTE ---
+        restante = st.session_state.budget - df_filtrado["Monto"].sum()
+        if restante >= 0:
+            with hc3: st.success(f"{T['highlight_budget']}:\n\n**${restante:,.2f}** (OK)")
+        else:
+            with hc3: st.error(f"{T['highlight_budget']}:\n\n**-${abs(restante):,.2f}** (OVER)")
         
         st.markdown("---")
         chart_bar = alt.Chart(df_filtrado).mark_bar(cornerRadius=5).encode(
@@ -481,23 +509,6 @@ with tab_dashboard:
             if 'Fecha_dt' in df_filtrado.columns:
                 line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
                 st.altair_chart(line, use_container_width=True)
-        
-        map_data = df_filtrado[(df_filtrado['lat']!=0)]
-        if not map_data.empty:
-            st.markdown("##### 🗺️ Map")
-            st.pydeck_chart(pdk.Deck(
-                map_style=None,
-                initial_view_state=pdk.ViewState(latitude=map_data['lat'].mean(), longitude=map_data['lon'].mean(), zoom=11),
-                layers=[pdk.Layer(
-                    "ScatterplotLayer",
-                    data=map_data,
-                    get_position='[lon, lat]',
-                    get_color=[15, 23, 42, 200],
-                    get_radius=200,
-                    pickable=True
-                )],
-                tooltip={"html": "<b>{Comercio}</b><br/>${Monto}"}
-            ))
 
         st.markdown(f"### {T['delete_title']}")
         st.caption(T['delete_caption'])
@@ -535,4 +546,4 @@ with tab_chat:
         st.session_state['chat_history'].append({"role":"assistant", "content":r})
 
 # FOOTER
-st.markdown("<div style='text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;'>SmartReceipt Global © 2026</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;'>SmartReceipt Global by Nexus Data Studios © 2026</div>", unsafe_allow_html=True)
