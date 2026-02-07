@@ -11,7 +11,18 @@ import altair as alt
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-import io # Necesario para la nueva gestión de archivos
+import io
+
+# --- LIBRERÍA PARA PDF (IMPORTACIÓN SEGURA) ---
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    HAS_REPORTLAB = True
+except ImportError:
+    HAS_REPORTLAB = False
 
 # =======================================================
 # 1. CEREBRO BILINGÜE (TEXTOS) 🌍
@@ -35,7 +46,7 @@ TEXTOS = {
         "tab1": "📸 Digitalizar Ticket",
         "tab2": "📈 Dashboard BI",
         "tab3": "💬 AI Assistant",
-        "upload_label": "📂 Haz clic para seleccionar tu ticket (tómate tu tiempo)",
+        "upload_label": "📂 Toca para usar CÁMARA o GALERÍA",
         "manual_btn": "✍️ Captura Manual",
         "manual_info": "¿Gasto sin comprobante?",
         "analyze_btn": "⚡ PROCESAR TICKET",
@@ -60,7 +71,11 @@ TEXTOS = {
         "chat_placeholder": "Ej: ¿En qué gasté más este mes?",
         "legal_privacy": "**AVISO DE PRIVACIDAD:** Sus datos son usados para gestión de gastos.",
         "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores.",
-        "preview_label": "Vista previa (Lista para IA):"
+        "preview_label": "Vista previa (Lista para IA):",
+        "report_title": "📑 Centro de Reportes",
+        "download_pdf": "📄 Descargar PDF Ejecutivo",
+        "download_csv": "📊 Descargar Excel (CSV)",
+        "report_error": "⚠️ Instala 'reportlab' para generar PDFs."
     },
     "EN": {
         "login_title": "Secure Access",
@@ -80,7 +95,7 @@ TEXTOS = {
         "tab1": "📸 Digitize Receipt",
         "tab2": "📈 BI Dashboard",
         "tab3": "💬 AI Assistant",
-        "upload_label": "📂 Click to select receipt (take your time)",
+        "upload_label": "📂 Tap to use CAMERA or GALLERY",
         "manual_btn": "✍️ Manual Entry",
         "manual_info": "Expense without receipt?",
         "analyze_btn": "⚡ PROCESS RECEIPT",
@@ -105,7 +120,11 @@ TEXTOS = {
         "chat_placeholder": "Ex: What was my highest expense?",
         "legal_privacy": "**PRIVACY POLICY:** Data used for expense management.",
         "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes.",
-        "preview_label": "Preview (AI Ready):"
+        "preview_label": "Preview (AI Ready):",
+        "report_title": "📑 Report Center",
+        "download_pdf": "📄 Download Executive PDF",
+        "download_csv": "📊 Download Excel (CSV)",
+        "report_error": "⚠️ Install 'reportlab' to generate PDFs."
     }
 }
 
@@ -165,7 +184,6 @@ st.markdown("""
     .stButton > button {border-radius: 8px; font-weight: 600;}
     [data-testid="stSidebar"] {background-color: #F8FAFC; border-right: 1px solid #E2E8F0;}
     
-    /* Estilo para el uploader para que se vea más robusto */
     [data-testid="stFileUploader"] {
         border: 2px dashed #cbd5e1;
         border-radius: 10px;
@@ -185,7 +203,6 @@ if "username" not in st.session_state: st.session_state.username = ""
 if "presupuestos" not in st.session_state: 
     st.session_state.presupuestos = {cat: 0.0 for cat in CATEGORIAS["ES"]} 
 
-# --- NUEVO: Bóveda de seguridad para el archivo ---
 if 'ticket_bytes' not in st.session_state:
     st.session_state.ticket_bytes = None
 
@@ -271,34 +288,84 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
 # =======================================================
-# 5. FUNCIONES CORE (OCR MEJORADO V44)
+# 5. GENERADOR DE REPORTES PDF 📄
+# =======================================================
+def generar_reporte_pdf(df_datos, usuario):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # 1. ENCABEZADO
+    title_style = styles['Title']
+    title_style.textColor = colors.HexColor('#0F172A')
+    elements.append(Paragraph("Nexus Data Studios - Informe de Gastos", title_style))
+    elements.append(Spacer(1, 12))
+    
+    normal_style = styles['Normal']
+    elements.append(Paragraph(f"<b>Usuario:</b> {usuario}", normal_style))
+    elements.append(Paragraph(f"<b>Fecha de Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", normal_style))
+    elements.append(Paragraph(f"<b>Total del Periodo:</b> ${df_datos['Monto'].sum():,.2f}", normal_style))
+    elements.append(Spacer(1, 20))
+    
+    # 2. RESUMEN POR CATEGORÍA (TABLA DE CONTADOR)
+    elements.append(Paragraph("<b>Resumen Fiscal por Categoría</b>", styles['Heading2']))
+    elements.append(Spacer(1, 10))
+    
+    resumen = df_datos.groupby('Categoría')['Monto'].sum().reset_index()
+    data_resumen = [['Categoría', 'Monto Total']] + resumen.values.tolist()
+    
+    t_resumen = Table(data_resumen, colWidths=[300, 150])
+    t_resumen.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3B82F6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F1F5F9')),
+        ('GRID', (0,0), (-1,-1), 1, colors.white)
+    ]))
+    elements.append(t_resumen)
+    elements.append(Spacer(1, 20))
+
+    # 3. DETALLE DE TRANSACCIONES
+    elements.append(Paragraph("<b>Detalle de Transacciones</b>", styles['Heading2']))
+    elements.append(Spacer(1, 10))
+    
+    # Seleccionar solo columnas relevantes
+    df_detalle = df_datos[['Fecha', 'Comercio', 'Categoría', 'Monto']].copy()
+    data_detalle = [['Fecha', 'Comercio', 'Categoría', 'Monto']] + df_detalle.values.tolist()
+    
+    t_detalle = Table(data_detalle, colWidths=[80, 150, 150, 80])
+    t_detalle.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#64748B')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+    ]))
+    elements.append(t_detalle)
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+# =======================================================
+# 6. FUNCIONES CORE
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
-    """
-    OCR V44: VUELTA AL EQUILIBRIO.
-    Ya no blanquea agresivamente. Usa CLAHE (Contrast Limited Adaptive Histogram Equalization)
-    para mejorar sombras y contraste sin destruir información.
-    """
     try:
         img_np = np.array(imagen_pil)
         if img_np.shape[-1] == 4: img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGBA2BGR)
         else: img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        
-        # 1. Escala de grises
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-        
-        # 2. CLAHE (Mejora de contraste inteligente y suave)
-        # clipLimit controla qué tan agresivo es el contraste. 2.0 es suave y bueno.
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         enhanced = clahe.apply(gray)
-        
-        # 3. Ligero enfoque para definir bordes de letras
         kernel = np.array([[0, -1, 0], [-1, 5,-1], [0, -1, 0]])
         sharpened = cv2.filter2D(enhanced, -1, kernel)
-
         return Image.fromarray(sharpened)
     except:
-        return imagen_pil # Fallback si falla
+        return imagen_pil 
 
 def limpiar_json(texto_sucio):
     inicio = texto_sucio.find('{')
@@ -353,7 +420,7 @@ def safe_float(val):
     except: return 0.0
 
 # =======================================================
-# 6. DASHBOARD & UI
+# 7. DASHBOARD & UI
 # =======================================================
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
@@ -364,7 +431,7 @@ if not df_local.empty:
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
-# --- SIDEBAR (SOLO CONFIG Y FILTROS) ---
+# --- SIDEBAR (CONFIG, FILTROS Y REPORTES) ---
 with st.sidebar:
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; margin-bottom: 20px;">
@@ -393,14 +460,28 @@ with st.sidebar:
         sel_mes = st.multiselect(T['period'], opts_mes)
         opts_cat = sorted([str(x) for x in df_local['Categoría'].unique() if x])
         sel_cat = st.multiselect(T['category'], opts_cat)
-        opts_com = sorted([str(x) for x in df_local['Comercio'].unique() if x])
-        sel_com = st.multiselect(T['commerce'], opts_com)
         
         df_filtrado = df_local.copy()
         if sel_mes: df_filtrado = df_filtrado[df_filtrado['Mes_Año'].isin(sel_mes)]
         if sel_cat: df_filtrado = df_filtrado[df_filtrado['Categoría'].isin(sel_cat)]
-        if sel_com: df_filtrado = df_filtrado[df_filtrado['Comercio'].isin(sel_com)]
     
+    # --- NUEVA SECCIÓN DE REPORTES EN SIDEBAR ---
+    st.markdown("---")
+    st.markdown(f"### {T['report_title']}")
+    if not df_filtrado.empty:
+        # BOTÓN 1: PDF EJECUTIVO
+        if HAS_REPORTLAB:
+            pdf_data = generar_reporte_pdf(df_filtrado, st.session_state.username)
+            st.download_button(label=T['download_pdf'], data=pdf_data, file_name="Reporte_Nexus.pdf", mime="application/pdf")
+        else:
+            st.warning(T['report_error'])
+        
+        # BOTÓN 2: EXCEL / CSV
+        csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
+        st.download_button(label=T['download_csv'], data=csv_data, file_name="Gastos_Nexus.csv", mime="text/csv")
+    else:
+        st.caption("Filtra datos para generar reportes.")
+
     st.markdown("---")
     if st.button(T['logout'], use_container_width=True):
         st.session_state.logged_in = False
@@ -414,7 +495,7 @@ st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', u
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
 # =======================================================
-# TAB 1: DIGITALIZACIÓN (LA SOLUCIÓN DEFINITIVA)
+# TAB 1: DIGITALIZACIÓN
 # =======================================================
 with tab_nuevo:
     if 'temp_data' not in st.session_state:
@@ -445,16 +526,12 @@ with tab_nuevo:
             # --- VERIFICAMOS LA BÓVEDA, NO EL CARGADOR ---
             if st.session_state.ticket_bytes is not None:
                 try:
-                    # Reconstruir imagen desde los bytes guardados
                     image_stream = io.BytesIO(st.session_state.ticket_bytes)
                     img_pil = Image.open(image_stream)
-                    
-                    # Aplicamos el OCR Suave V44
                     img_proc = procesar_imagen_opencv(img_pil)
                     st.caption(T['preview_label'])
                     st.image(img_proc, use_container_width=True, output_format="JPEG")
                     
-                    # Botón de análisis
                     if st.button(T['analyze_btn'], type="primary", use_container_width=True):
                         with st.spinner("Nexus AI Processing..."):
                             txt, mod = analizar_ticket(img_proc, st.session_state.language)
@@ -463,21 +540,18 @@ with tab_nuevo:
                             else:
                                 try:
                                     st.session_state['temp_data'] = json.loads(txt_limpio)
-                                    # LIMPIAR BÓVEDA TRAS ANÁLISIS EXITOSO PARA PODER SUBIR OTRO
                                     st.session_state.ticket_bytes = None 
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error parsing: {e}")
-                                    with st.expander("Debug"): st.code(txt)
                 except Exception as e:
                     st.error(f"Error processing stored image: {e}")
-                    # Si hay error grave, limpiar bóveda
                     st.session_state.ticket_bytes = None
             else:
                 st.info(T['upload_label'])
 
     else:
-        # FASE 2: VALIDACIÓN (Igual que antes)
+        # FASE 2: VALIDACIÓN
         st.markdown(f"### {T['validation_title']}")
         data = st.session_state['temp_data']
         
