@@ -8,4 +8,3 @@ altair
 pydeck
 gspread
 oauth2client
-pip install reportlab
