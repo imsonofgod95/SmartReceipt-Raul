@@ -11,6 +11,7 @@ import altair as alt
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+import io # Necesario para la nueva gestión de archivos
 
 # =======================================================
 # 1. CEREBRO BILINGÜE (TEXTOS) 🌍
@@ -31,10 +32,10 @@ TEXTOS = {
         "category": "🏷️ Categoría",
         "commerce": "🏪 Comercio",
         "logout": "Cerrar Sesión",
-        "tab1": "📸 Digitalizar Ticket", # <-- Titulo Pestaña
+        "tab1": "📸 Digitalizar Ticket",
         "tab2": "📈 Dashboard BI",
         "tab3": "💬 AI Assistant",
-        "upload_label": "Arrastra tu imagen aquí o haz clic para buscar",
+        "upload_label": "📂 Haz clic para seleccionar tu ticket (tómate tu tiempo)",
         "manual_btn": "✍️ Captura Manual",
         "manual_info": "¿Gasto sin comprobante?",
         "analyze_btn": "⚡ PROCESAR TICKET",
@@ -58,7 +59,8 @@ TEXTOS = {
         "delete_success": "Registro eliminado de la Nube",
         "chat_placeholder": "Ej: ¿En qué gasté más este mes?",
         "legal_privacy": "**AVISO DE PRIVACIDAD:** Sus datos son usados para gestión de gastos.",
-        "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores."
+        "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores.",
+        "preview_label": "Vista previa (Lista para IA):"
     },
     "EN": {
         "login_title": "Secure Access",
@@ -78,7 +80,7 @@ TEXTOS = {
         "tab1": "📸 Digitize Receipt",
         "tab2": "📈 BI Dashboard",
         "tab3": "💬 AI Assistant",
-        "upload_label": "Drag image here or click to browse",
+        "upload_label": "📂 Click to select receipt (take your time)",
         "manual_btn": "✍️ Manual Entry",
         "manual_info": "Expense without receipt?",
         "analyze_btn": "⚡ PROCESS RECEIPT",
@@ -102,7 +104,8 @@ TEXTOS = {
         "delete_success": "Record deleted from Cloud",
         "chat_placeholder": "Ex: What was my highest expense?",
         "legal_privacy": "**PRIVACY POLICY:** Data used for expense management.",
-        "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes."
+        "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes.",
+        "preview_label": "Preview (AI Ready):"
     }
 }
 
@@ -161,6 +164,14 @@ st.markdown("""
     .metric-label {font-size: 0.875rem; color: #64748B; font-weight: 500;}
     .stButton > button {border-radius: 8px; font-weight: 600;}
     [data-testid="stSidebar"] {background-color: #F8FAFC; border-right: 1px solid #E2E8F0;}
+    
+    /* Estilo para el uploader para que se vea más robusto */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed #cbd5e1;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -173,6 +184,10 @@ if "username" not in st.session_state: st.session_state.username = ""
 
 if "presupuestos" not in st.session_state: 
     st.session_state.presupuestos = {cat: 0.0 for cat in CATEGORIAS["ES"]} 
+
+# --- NUEVO: Bóveda de seguridad para el archivo ---
+if 'ticket_bytes' not in st.session_state:
+    st.session_state.ticket_bytes = None
 
 def login():
     c1, c2, c3 = st.columns([1,2,1])
@@ -256,12 +271,13 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
 # =======================================================
-# 5. FUNCIONES CORE
+# 5. FUNCIONES CORE (OCR MEJORADO V44)
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
     """
-    OCR AGRESIVO V43: 
-    Usa umbrales binarios para 'quemar' el fondo y dejar solo tinta negra.
+    OCR V44: VUELTA AL EQUILIBRIO.
+    Ya no blanquea agresivamente. Usa CLAHE (Contrast Limited Adaptive Histogram Equalization)
+    para mejorar sombras y contraste sin destruir información.
     """
     try:
         img_np = np.array(imagen_pil)
@@ -271,17 +287,18 @@ def procesar_imagen_opencv(imagen_pil):
         # 1. Escala de grises
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
         
-        # 2. Umbral Adaptativo Agresivo (Blanqueamiento)
-        # BlockSize=15, C=10 (Entre mayor es C, más agresivo es el blanqueado)
-        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                       cv2.THRESH_BINARY, 15, 10)
+        # 2. CLAHE (Mejora de contraste inteligente y suave)
+        # clipLimit controla qué tan agresivo es el contraste. 2.0 es suave y bueno.
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(gray)
         
-        # 3. Denoising opcional (limpia puntitos negros)
-        clean = cv2.fastNlMeansDenoising(thresh, None, 10, 7, 21)
-        
-        return Image.fromarray(clean)
+        # 3. Ligero enfoque para definir bordes de letras
+        kernel = np.array([[0, -1, 0], [-1, 5,-1], [0, -1, 0]])
+        sharpened = cv2.filter2D(enhanced, -1, kernel)
+
+        return Image.fromarray(sharpened)
     except:
-        return imagen_pil 
+        return imagen_pil # Fallback si falla
 
 def limpiar_json(texto_sucio):
     inicio = texto_sucio.find('{')
@@ -347,7 +364,7 @@ if not df_local.empty:
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
-# --- SIDEBAR (LIMPIO - SOLO CONFIG Y FILTROS) ---
+# --- SIDEBAR (SOLO CONFIG Y FILTROS) ---
 with st.sidebar:
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; margin-bottom: 20px;">
@@ -397,7 +414,7 @@ st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', u
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
 # =======================================================
-# TAB 1: DIGITALIZACIÓN (REGRESO TRIUNFAL)
+# TAB 1: DIGITALIZACIÓN (LA SOLUCIÓN DEFINITIVA)
 # =======================================================
 with tab_nuevo:
     if 'temp_data' not in st.session_state:
@@ -406,8 +423,13 @@ with tab_nuevo:
         
         with col1:
             st.markdown("#### 1. Input Source")
-            # --- CARGADOR DE ARCHIVOS CON KEY ÚNICO PARA ESTABILIDAD ---
-            archivo = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], key="loader_tab1")
+            
+            # --- EL CARGADOR QUE GUARDA EN LA BÓVEDA ---
+            uploaded_file = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], key="final_uploader")
+            
+            # SI HAY ARCHIVO NUEVO, GUARDAR BYTES INMEDIATAMENTE EN LA BÓVEDA
+            if uploaded_file is not None:
+                st.session_state.ticket_bytes = uploaded_file.getvalue()
             
             st.markdown("---")
             if st.button(T['manual_btn'], use_container_width=True):
@@ -420,14 +442,19 @@ with tab_nuevo:
 
         with col2:
             st.markdown("#### 2. Preview & Action")
-            if archivo:
-                # Procesamiento Inmediato para visualizar
+            # --- VERIFICAMOS LA BÓVEDA, NO EL CARGADOR ---
+            if st.session_state.ticket_bytes is not None:
                 try:
-                    img = Image.open(archivo)
-                    # Aplicamos el OCR Agresivo V43
-                    img_proc = procesar_imagen_opencv(img)
-                    st.image(img_proc, caption="Enhanced Scan", use_container_width=True)
+                    # Reconstruir imagen desde los bytes guardados
+                    image_stream = io.BytesIO(st.session_state.ticket_bytes)
+                    img_pil = Image.open(image_stream)
                     
+                    # Aplicamos el OCR Suave V44
+                    img_proc = procesar_imagen_opencv(img_pil)
+                    st.caption(T['preview_label'])
+                    st.image(img_proc, use_container_width=True, output_format="JPEG")
+                    
+                    # Botón de análisis
                     if st.button(T['analyze_btn'], type="primary", use_container_width=True):
                         with st.spinner("Nexus AI Processing..."):
                             txt, mod = analizar_ticket(img_proc, st.session_state.language)
@@ -436,17 +463,21 @@ with tab_nuevo:
                             else:
                                 try:
                                     st.session_state['temp_data'] = json.loads(txt_limpio)
+                                    # LIMPIAR BÓVEDA TRAS ANÁLISIS EXITOSO PARA PODER SUBIR OTRO
+                                    st.session_state.ticket_bytes = None 
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error parsing: {e}")
-                                    st.code(txt)
+                                    with st.expander("Debug"): st.code(txt)
                 except Exception as e:
-                    st.error(f"Error loading image: {e}")
+                    st.error(f"Error processing stored image: {e}")
+                    # Si hay error grave, limpiar bóveda
+                    st.session_state.ticket_bytes = None
             else:
-                st.info("👈 Please upload an image / Por favor sube una imagen.")
+                st.info(T['upload_label'])
 
     else:
-        # FASE 2: VALIDACIÓN (Si ya hay datos extraídos)
+        # FASE 2: VALIDACIÓN (Igual que antes)
         st.markdown(f"### {T['validation_title']}")
         data = st.session_state['temp_data']
         
@@ -477,7 +508,7 @@ with tab_nuevo:
 
             col_btn1, col_btn2 = st.columns([1,1])
             with col_btn1:
-                if st.button("❌ Cancelar", use_container_width=True):
+                if st.button("❌ Cancelar / Volver", use_container_width=True):
                     del st.session_state['temp_data']
                     st.rerun()
             with col_btn2:
@@ -591,8 +622,8 @@ with tab_chat:
         else:
             with st.spinner("AI Thinking..."): 
                 r = consultar_chat_financiero(q, df_filtrado, st.session_state.language) 
-        with st.chat_message("assistant"): st.markdown(r)
-        st.session_state['chat_history'].append({"role":"assistant", "content":r})
+            with st.chat_message("assistant"): st.markdown(r)
+            st.session_state['chat_history'].append({"role":"assistant", "content":r})
 
 # FOOTER
 st.markdown("<div style='text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;'>SmartReceipt Enterprise by Nexus Data Studios © 2026</div>", unsafe_allow_html=True)
