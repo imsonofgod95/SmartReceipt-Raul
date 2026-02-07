@@ -11,7 +11,6 @@ import altair as alt
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
-import io
 
 # =======================================================
 # 1. CEREBRO BILINGÜE (TEXTOS) 🌍
@@ -32,14 +31,15 @@ TEXTOS = {
         "category": "🏷️ Categoría",
         "commerce": "🏪 Comercio",
         "logout": "Cerrar Sesión",
-        "upload_section": "📸 Digitalizar Ticket",
-        "upload_label": "Subir imagen (JPG/PNG)",
+        "tab1": "📸 Digitalizar Ticket", # <-- Titulo Pestaña
+        "tab2": "📈 Dashboard BI",
+        "tab3": "💬 AI Assistant",
+        "upload_label": "Arrastra tu imagen aquí o haz clic para buscar",
         "manual_btn": "✍️ Captura Manual",
         "manual_info": "¿Gasto sin comprobante?",
-        "analyze_btn": "⚡ Analizar Ticket",
-        "cancel_btn": "❌ Cancelar / Volver",
+        "analyze_btn": "⚡ PROCESAR TICKET",
         "save_btn": "💾 Guardar Transacción",
-        "validation_title": "✅ Validar Información",
+        "validation_title": "✅ Validar Información Extraída",
         "highlights_title": "💡 Estado Financiero",
         "highlight_max": "💸 Compra más grande",
         "highlight_top": "🛍️ Categoría Top",
@@ -57,11 +57,8 @@ TEXTOS = {
         "delete_btn": "Eliminar Registro",
         "delete_success": "Registro eliminado de la Nube",
         "chat_placeholder": "Ej: ¿En qué gasté más este mes?",
-        "tab_dash": "📈 Dashboard BI",
-        "tab_chat": "💬 AI Assistant",
         "legal_privacy": "**AVISO DE PRIVACIDAD:** Sus datos son usados para gestión de gastos.",
-        "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores.",
-        "error_no_file": "⚠️ Imagen no detectada en memoria. Intente subirla de nuevo."
+        "legal_terms": "**TÉRMINOS:** Uso bajo su responsabilidad. IA puede cometer errores."
     },
     "EN": {
         "login_title": "Secure Access",
@@ -78,14 +75,15 @@ TEXTOS = {
         "category": "🏷️ Category",
         "commerce": "🏪 Merchant",
         "logout": "Logout",
-        "upload_section": "📸 Digitize Receipt",
-        "upload_label": "Upload image (JPG/PNG)",
+        "tab1": "📸 Digitize Receipt",
+        "tab2": "📈 BI Dashboard",
+        "tab3": "💬 AI Assistant",
+        "upload_label": "Drag image here or click to browse",
         "manual_btn": "✍️ Manual Entry",
         "manual_info": "Expense without receipt?",
-        "analyze_btn": "⚡ Analyze Receipt",
-        "cancel_btn": "❌ Cancel / Back",
+        "analyze_btn": "⚡ PROCESS RECEIPT",
         "save_btn": "💾 Save Transaction",
-        "validation_title": "✅ Validate Data",
+        "validation_title": "✅ Validate Extracted Data",
         "highlights_title": "💡 Financial Status",
         "highlight_max": "💸 Biggest Purchase",
         "highlight_top": "🛍️ Top Category",
@@ -103,11 +101,8 @@ TEXTOS = {
         "delete_btn": "Delete Record",
         "delete_success": "Record deleted from Cloud",
         "chat_placeholder": "Ex: What was my highest expense?",
-        "tab_dash": "📈 BI Dashboard",
-        "tab_chat": "💬 AI Assistant",
         "legal_privacy": "**PRIVACY POLICY:** Data used for expense management.",
-        "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes.",
-        "error_no_file": "⚠️ Image not found in memory. Please upload again."
+        "legal_terms": "**TERMS:** Use at your own risk. AI might make mistakes."
     }
 }
 
@@ -265,8 +260,8 @@ if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 # =======================================================
 def procesar_imagen_opencv(imagen_pil):
     """
-    MODIFICADO V42: EFECTO ESCÁNER AGRESIVO
-    Usa Adaptive Threshold para limpiar sombras y dejar blanco puro.
+    OCR AGRESIVO V43: 
+    Usa umbrales binarios para 'quemar' el fondo y dejar solo tinta negra.
     """
     try:
         img_np = np.array(imagen_pil)
@@ -276,15 +271,15 @@ def procesar_imagen_opencv(imagen_pil):
         # 1. Escala de grises
         gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
         
-        # 2. Suavizado ligero para reducir ruido antes del umbral
-        blur = cv2.GaussianBlur(gray, (5,5), 0)
+        # 2. Umbral Adaptativo Agresivo (Blanqueamiento)
+        # BlockSize=15, C=10 (Entre mayor es C, más agresivo es el blanqueado)
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                       cv2.THRESH_BINARY, 15, 10)
         
-        # 3. UMBRAL ADAPTATIVO (La magia del escáner)
-        #blockSize=11, C=2 son buenos valores estándar para documentos
-        thresh = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                                       cv2.THRESH_BINARY, 11, 2)
+        # 3. Denoising opcional (limpia puntitos negros)
+        clean = cv2.fastNlMeansDenoising(thresh, None, 10, 7, 21)
         
-        return Image.fromarray(thresh)
+        return Image.fromarray(clean)
     except:
         return imagen_pil 
 
@@ -320,6 +315,20 @@ def analizar_ticket(imagen_pil, idioma_actual):
         return response.text, modelo
     except Exception as e: return f"Error: {e}", modelo
 
+def consultar_chat_financiero(pregunta, datos_df, idioma_actual):
+    try:
+        mods = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        modelo = next((m for m in mods if 'flash' in m and '1.5' in m), mods[0] if mods else "gemini-1.5-flash")
+    except: modelo = "gemini-1.5-flash"
+    try:
+        model = genai.GenerativeModel(modelo)
+        datos_csv = datos_df.to_csv(index=False)
+        lang_prompt = "Answer in ENGLISH" if idioma_actual == "EN" else "Responde en ESPAÑOL"
+        prompt = f"Role: Financial Assistant. {lang_prompt}. Data: \n---\n{datos_csv}\n---\nQuery: {pregunta}"
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e: return f"Error Chat: {e}"
+
 def safe_float(val):
     try:
         if val is None or val == "" or str(val).strip().lower() == "null": return 0.0
@@ -327,43 +336,7 @@ def safe_float(val):
     except: return 0.0
 
 # =======================================================
-# 6. CALLBACKS Y PERSISTENCIA (BLINDAJE TOTAL) 🛡️
-# =======================================================
-# Inicializar estado de imagen persistente
-if 'imagen_persistente' not in st.session_state:
-    st.session_state.imagen_persistente = None
-
-def cb_carga_manual():
-    st.session_state['temp_data'] = {
-        "comercio": "", "total": 0.0, "fecha": datetime.now().strftime("%d/%m/%Y"),
-        "hora": datetime.now().strftime("%H:%M"), "categoria": CATS_ACTUALES[0],
-        "ubicacion": "", "detalles": "Manual", "latitud": 0.0, "longitud": 0.0
-    }
-
-def cb_cancelar():
-    if 'temp_data' in st.session_state:
-        del st.session_state['temp_data']
-    st.session_state.imagen_persistente = None # Limpiar imagen al cancelar
-
-def cb_analizar_persistente():
-    # Usamos la imagen que YA está segura en session_state
-    if st.session_state.imagen_persistente is not None:
-        try:
-            # Procesar la imagen guardada en memoria
-            img_proc = procesar_imagen_opencv(st.session_state.imagen_persistente)
-            txt, mod = analizar_ticket(img_proc, st.session_state.language)
-            txt_limpio = limpiar_json(txt)
-            if "Error" in txt: 
-                st.error(txt)
-            else:
-                st.session_state['temp_data'] = json.loads(txt_limpio)
-        except Exception as e:
-            st.error(f"Error AI: {e}")
-    else:
-        st.toast(T['error_no_file'])
-
-# =======================================================
-# 7. DASHBOARD & UI
+# 6. DASHBOARD & UI
 # =======================================================
 df_local = pd.DataFrame(st.session_state['gastos'])
 df_filtrado = pd.DataFrame()
@@ -374,7 +347,7 @@ if not df_local.empty:
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
 
-# --- SIDEBAR BLINDADO ---
+# --- SIDEBAR (LIMPIO - SOLO CONFIG Y FILTROS) ---
 with st.sidebar:
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; margin-bottom: 20px;">
@@ -387,31 +360,6 @@ with st.sidebar:
         st.session_state.language = "ES" if lang_side == "Español" else "EN"
         st.rerun()
 
-    # --- SECCIÓN DE CARGA SEGURA ---
-    st.markdown("---")
-    st.markdown(f"#### {T['upload_section']}")
-    
-    # 1. CARGA MANUAL
-    st.button(T['manual_btn'], use_container_width=True, on_click=cb_carga_manual)
-
-    # 2. CARGA IMAGEN (Lógica de Persistencia Inmediata)
-    uploaded_file = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], label_visibility="collapsed", key="sidebar_uploader")
-    
-    # TRUCO DE BLINDAJE: Si hay archivo nuevo, lo guardamos en persistente INMEDIATAMENTE
-    if uploaded_file is not None:
-        try:
-            # Convertimos a PIL y guardamos en session_state para que no se pierda
-            image_pil = Image.open(uploaded_file)
-            st.session_state.imagen_persistente = image_pil
-        except: pass
-    
-    # Mostramos lo que hay en memoria persistente, no solo lo del uploader
-    if st.session_state.imagen_persistente:
-        st.image(st.session_state.imagen_persistente, caption="Ready for AI", use_container_width=True)
-        # El botón analiza lo que hay en persistente
-        st.button(T['analyze_btn'], type="primary", use_container_width=True, on_click=cb_analizar_persistente)
-
-    # --- RESTO DEL SIDEBAR ---
     st.markdown("---")
     with st.expander(T['budget_set']):
         presupuesto_total_calc = 0.0
@@ -445,158 +393,206 @@ with st.sidebar:
 st.markdown('<h1 class="main-header">SmartReceipt Enterprise</h1>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', unsafe_allow_html=True)
 
+# TABS PRINCIPALES
+tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
+
 # =======================================================
-# LÓGICA DE PANTALLA PRINCIPAL (MODOS)
+# TAB 1: DIGITALIZACIÓN (REGRESO TRIUNFAL)
 # =======================================================
-
-# MODO 1: VALIDACIÓN (Si hay datos temporales de un ticket nuevo)
-if 'temp_data' in st.session_state:
-    st.markdown(f"### {T['validation_title']}")
-    data = st.session_state['temp_data']
-    
-    with st.container(border=True):
-        c1,c2 = st.columns(2)
-        vc = c1.text_input(T['commerce'], data.get("comercio",""), key="val_com")
-        try: val_monto = safe_float(str(data.get("total",0)).replace("$","").replace(",",""))
-        except: val_monto = 0.0
-        vm = c2.number_input("Total ($)", value=val_monto, key="val_tot")
-
-        c3,c4,c5 = st.columns(3)
-        vf = c3.text_input("Date (DD/MM/YYYY)", data.get("fecha",""), key="val_date")
-        vh = c4.text_input("Time", data.get("hora", "00:00"), key="val_time")
+with tab_nuevo:
+    if 'temp_data' not in st.session_state:
+        # FASE 1: SUBIR Y ANALIZAR
+        col1, col2 = st.columns([1, 1], gap="large")
         
-        cat_def = data.get("categoria","Misc")
-        idx = 0
-        if cat_def in CATS_ACTUALES:
-            idx = CATS_ACTUALES.index(cat_def)
-        else: idx = len(CATS_ACTUALES) - 1
-        
-        vcat = c5.selectbox(T['category'], CATS_ACTUALES, index=idx, key="val_cat")
-        
-        with st.expander("📝 Details", expanded=True):
-            vu = st.text_input("Location", data.get("ubicacion",""), key="val_loc")
-            vdet = st.text_input("Details", data.get("detalles",""), key="val_det")
-            vlat = 0.0 
-            vlon = 0.0
-
-        col_acc1, col_acc2 = st.columns([1,1])
-        with col_acc1:
-            st.button(T['cancel_btn'], use_container_width=True, on_click=cb_cancelar)
+        with col1:
+            st.markdown("#### 1. Input Source")
+            # --- CARGADOR DE ARCHIVOS CON KEY ÚNICO PARA ESTABILIDAD ---
+            archivo = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], key="loader_tab1")
             
-        with col_acc2:
-            if st.button(T['save_btn'], type="primary", use_container_width=True, key="btn_save"):
-                nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
-                st.session_state['gastos'].append(nuevo)
-                hoja = get_google_sheet()
-                if hoja:
-                    try: hoja.append_row(list(nuevo.values()))
-                    except: pass
-                del st.session_state['temp_data']
-                st.session_state.imagen_persistente = None # Limpiar imagen tras guardar
-                st.rerun()
-
-# MODO 2: DASHBOARD & CHAT (Si NO hay datos temporales)
-else:
-    tab_dashboard, tab_chat = st.tabs([T['tab_dash'], T['tab_chat']])
-
-    # --- DASHBOARD ---
-    with tab_dashboard:
-        if not df_filtrado.empty:
-            # MÉTRICAS GENERALES
-            m1, m2, m3, m4 = st.columns(4)
-            with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["total_label"]}</div><div class="metric-value" style="color:#0F172A">${df_filtrado["Monto"].sum():,.0f}</div></div>', unsafe_allow_html=True)
-            with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["trans_label"]}</div><div class="metric-value" style="color:#3B82F6">{len(df_filtrado)}</div></div>', unsafe_allow_html=True)
-            with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["avg_label"]}</div><div class="metric-value" style="color:#F59E0B">${df_filtrado["Monto"].mean():,.0f}</div></div>', unsafe_allow_html=True)
-            with m4:
-                top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "-"
-                st.markdown(f'<div class="metric-card"><div class="metric-label">{T["max_label"]}</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # HIGHLIGHTS
-            st.markdown(f"### {T['highlights_title']}")
-            hc1, hc2, hc3 = st.columns(3)
-            
-            idx_max = df_filtrado['Monto'].idxmax()
-            row_max = df_filtrado.loc[idx_max]
-            with hc1: st.info(f"{T['highlight_max']}:\n\n${row_max['Monto']:,.2f} - **{row_max['Comercio']}**")
-            
-            cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
-            monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
-            with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
-            
-            mask_serv = df_filtrado['Categoría'].str.contains("Servicios|Utilities|Telefonía|Phone", case=False, na=False)
-            gastos_serv = df_filtrado[mask_serv]
-            total_serv = gastos_serv['Monto'].sum() if not gastos_serv.empty else 0.0
-            with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
-
             st.markdown("---")
+            if st.button(T['manual_btn'], use_container_width=True):
+                 st.session_state['temp_data'] = {
+                    "comercio": "", "total": 0.0, "fecha": datetime.now().strftime("%d/%m/%Y"),
+                    "hora": datetime.now().strftime("%H:%M"), "categoria": CATS_ACTUALES[0],
+                    "ubicacion": "", "detalles": "Manual", "latitud": 0.0, "longitud": 0.0
+                }
+                 st.rerun()
+
+        with col2:
+            st.markdown("#### 2. Preview & Action")
+            if archivo:
+                # Procesamiento Inmediato para visualizar
+                try:
+                    img = Image.open(archivo)
+                    # Aplicamos el OCR Agresivo V43
+                    img_proc = procesar_imagen_opencv(img)
+                    st.image(img_proc, caption="Enhanced Scan", use_container_width=True)
+                    
+                    if st.button(T['analyze_btn'], type="primary", use_container_width=True):
+                        with st.spinner("Nexus AI Processing..."):
+                            txt, mod = analizar_ticket(img_proc, st.session_state.language)
+                            txt_limpio = limpiar_json(txt)
+                            if "Error" in txt: st.error(txt)
+                            else:
+                                try:
+                                    st.session_state['temp_data'] = json.loads(txt_limpio)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error parsing: {e}")
+                                    st.code(txt)
+                except Exception as e:
+                    st.error(f"Error loading image: {e}")
+            else:
+                st.info("👈 Please upload an image / Por favor sube una imagen.")
+
+    else:
+        # FASE 2: VALIDACIÓN (Si ya hay datos extraídos)
+        st.markdown(f"### {T['validation_title']}")
+        data = st.session_state['temp_data']
+        
+        with st.container(border=True):
+            c1,c2 = st.columns(2)
+            vc = c1.text_input(T['commerce'], data.get("comercio",""), key="val_com")
+            try: val_monto = safe_float(str(data.get("total",0)).replace("$","").replace(",",""))
+            except: val_monto = 0.0
+            vm = c2.number_input("Total ($)", value=val_monto, key="val_tot")
+
+            c3,c4,c5 = st.columns(3)
+            vf = c3.text_input("Date (DD/MM/YYYY)", data.get("fecha",""), key="val_date")
+            vh = c4.text_input("Time", data.get("hora", "00:00"), key="val_time")
             
-            # --- GRÁFICO LAYERED ---
-            st.markdown(f"##### {T['chart_budget_title']}")
-            try:
-                gastos_por_cat = df_filtrado.groupby('Categoría')['Monto'].sum().reset_index()
-                gastos_por_cat.columns = ['Categoría', 'Gasto Real']
-                df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
-                df_final = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
+            cat_def = data.get("categoria","Misc")
+            idx = 0
+            if cat_def in CATS_ACTUALES:
+                idx = CATS_ACTUALES.index(cat_def)
+            else: idx = len(CATS_ACTUALES) - 1
+            
+            vcat = c5.selectbox(T['category'], CATS_ACTUALES, index=idx, key="val_cat")
+            
+            with st.expander("📝 Details", expanded=True):
+                vu = st.text_input("Location", data.get("ubicacion",""), key="val_loc")
+                vdet = st.text_input("Details", data.get("detalles",""), key="val_det")
+                vlat = 0.0 
+                vlon = 0.0
 
-                base = alt.Chart(df_final).encode(x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)))
-                bar_presupuesto = base.mark_bar(color='#E2E8F0').encode(y='Presupuesto', tooltip=['Categoría', 'Presupuesto'])
-                bar_gasto = base.mark_bar(color='#3B82F6', opacity=0.9).encode(y='Gasto Real', tooltip=['Categoría', 'Gasto Real'])
-                
-                chart_layer = (bar_presupuesto + bar_gasto).properties(height=350)
-                st.altair_chart(chart_layer, use_container_width=True)
-                st.caption("ℹ️ Barra Gris = Presupuesto | Barra Azul = Gasto Real")
-            except Exception as e:
-                st.warning("⚠️ Datos insuficientes para gráfico presupuestal.")
-
-            # Gráficos Secundarios
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
-                pie = base.mark_arc(innerRadius=60).encode(
-                    color=alt.Color("Categoría", scale={'scheme': 'tableau10'}), tooltip=["Categoría", "Monto"]
-                )
-                st.altair_chart(pie, use_container_width=True)
-            with col_g2:
-                if 'Fecha_dt' in df_filtrado.columns:
-                    line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
-                    st.altair_chart(line, use_container_width=True)
-
-            st.markdown(f"### {T['delete_title']}")
-            st.caption(T['delete_caption'])
-            opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
-            c_del1, c_del2 = st.columns([3,1])
-            with c_del1: 
-                sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()), key="sel_delete")
-            with c_del2: 
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button(T['delete_btn'], type="primary", key="btn_delete"):
-                    idx_real = opciones_borrar[sel_del]
+            col_btn1, col_btn2 = st.columns([1,1])
+            with col_btn1:
+                if st.button("❌ Cancelar", use_container_width=True):
+                    del st.session_state['temp_data']
+                    st.rerun()
+            with col_btn2:
+                if st.button(T['save_btn'], type="primary", use_container_width=True):
+                    nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
+                    st.session_state['gastos'].append(nuevo)
                     hoja = get_google_sheet()
                     if hoja:
-                        try: 
-                            hoja.delete_rows(idx_real + 2)
-                            del st.session_state['gastos'][idx_real]
-                            st.toast(T['delete_success'], icon="🗑️")
-                            st.rerun()
-                        except: st.error("Error DB")
-            
-            with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
-        else: st.info("No data / Sin datos.")
+                        try: hoja.append_row(list(nuevo.values()))
+                        except: pass
+                    del st.session_state['temp_data']
+                    st.rerun()
 
-    # --- CHAT ---
-    with tab_chat:
-        for m in st.session_state['chat_history']:
-            with st.chat_message(m["role"]): st.markdown(m["content"])
-        if q := st.chat_input(T['chat_placeholder'], key="chat_input"):
-            with st.chat_message("user"): st.markdown(q)
-            st.session_state['chat_history'].append({"role":"user", "content":q})
-            if df_filtrado.empty: r = "No data."
-            else:
-                with st.spinner("AI Thinking..."): 
-                    r = consultar_chat_financiero(q, df_filtrado, st.session_state.language) 
-            with st.chat_message("assistant"): st.markdown(r)
-            st.session_state['chat_history'].append({"role":"assistant", "content":r})
+# =======================================================
+# TAB 2: DASHBOARD
+# =======================================================
+with tab_dashboard:
+    if not df_filtrado.empty:
+        # MÉTRICAS GENERALES
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["total_label"]}</div><div class="metric-value" style="color:#0F172A">${df_filtrado["Monto"].sum():,.0f}</div></div>', unsafe_allow_html=True)
+        with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["trans_label"]}</div><div class="metric-value" style="color:#3B82F6">{len(df_filtrado)}</div></div>', unsafe_allow_html=True)
+        with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["avg_label"]}</div><div class="metric-value" style="color:#F59E0B">${df_filtrado["Monto"].mean():,.0f}</div></div>', unsafe_allow_html=True)
+        with m4:
+            top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "-"
+            st.markdown(f'<div class="metric-card"><div class="metric-label">{T["max_label"]}</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # HIGHLIGHTS
+        st.markdown(f"### {T['highlights_title']}")
+        hc1, hc2, hc3 = st.columns(3)
+        
+        idx_max = df_filtrado['Monto'].idxmax()
+        row_max = df_filtrado.loc[idx_max]
+        with hc1: st.info(f"{T['highlight_max']}:\n\n${row_max['Monto']:,.2f} - **{row_max['Comercio']}**")
+        
+        cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
+        monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
+        with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
+        
+        mask_serv = df_filtrado['Categoría'].str.contains("Servicios|Utilities|Telefonía|Phone", case=False, na=False)
+        gastos_serv = df_filtrado[mask_serv]
+        total_serv = gastos_serv['Monto'].sum() if not gastos_serv.empty else 0.0
+        with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
+
+        st.markdown("---")
+        
+        # --- GRÁFICO LAYERED ---
+        st.markdown(f"##### {T['chart_budget_title']}")
+        try:
+            gastos_por_cat = df_filtrado.groupby('Categoría')['Monto'].sum().reset_index()
+            gastos_por_cat.columns = ['Categoría', 'Gasto Real']
+            df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
+            df_final = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
+
+            base = alt.Chart(df_final).encode(x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)))
+            bar_presupuesto = base.mark_bar(color='#E2E8F0').encode(y='Presupuesto', tooltip=['Categoría', 'Presupuesto'])
+            bar_gasto = base.mark_bar(color='#3B82F6', opacity=0.9).encode(y='Gasto Real', tooltip=['Categoría', 'Gasto Real'])
+            
+            chart_layer = (bar_presupuesto + bar_gasto).properties(height=350)
+            st.altair_chart(chart_layer, use_container_width=True)
+            st.caption("ℹ️ Barra Gris = Presupuesto | Barra Azul = Gasto Real")
+        except Exception as e:
+            st.warning("⚠️ Datos insuficientes para gráfico presupuestal.")
+
+        # Gráficos Secundarios
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
+            pie = base.mark_arc(innerRadius=60).encode(
+                color=alt.Color("Categoría", scale={'scheme': 'tableau10'}), tooltip=["Categoría", "Monto"]
+            )
+            st.altair_chart(pie, use_container_width=True)
+        with col_g2:
+            if 'Fecha_dt' in df_filtrado.columns:
+                line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
+                st.altair_chart(line, use_container_width=True)
+
+        st.markdown(f"### {T['delete_title']}")
+        st.caption(T['delete_caption'])
+        opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
+        c_del1, c_del2 = st.columns([3,1])
+        with c_del1: 
+            sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()), key="sel_delete")
+        with c_del2: 
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(T['delete_btn'], type="primary", key="btn_delete"):
+                idx_real = opciones_borrar[sel_del]
+                hoja = get_google_sheet()
+                if hoja:
+                    try: 
+                        hoja.delete_rows(idx_real + 2)
+                        del st.session_state['gastos'][idx_real]
+                        st.toast(T['delete_success'], icon="🗑️")
+                        st.rerun()
+                    except: st.error("Error DB")
+        
+        with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
+    else: st.info("No data / Sin datos.")
+
+# =======================================================
+# TAB 3: CHAT
+# =======================================================
+with tab_chat:
+    for m in st.session_state['chat_history']:
+        with st.chat_message(m["role"]): st.markdown(m["content"])
+    if q := st.chat_input(T['chat_placeholder'], key="chat_input"):
+        with st.chat_message("user"): st.markdown(q)
+        st.session_state['chat_history'].append({"role":"user", "content":q})
+        if df_filtrado.empty: r = "No data."
+        else:
+            with st.spinner("AI Thinking..."): 
+                r = consultar_chat_financiero(q, df_filtrado, st.session_state.language) 
+        with st.chat_message("assistant"): st.markdown(r)
+        st.session_state['chat_history'].append({"role":"assistant", "content":r})
 
 # FOOTER
 st.markdown("<div style='text-align: center; margin-top: 50px; color: #94a3b8; font-size: 12px;'>SmartReceipt Enterprise by Nexus Data Studios © 2026</div>", unsafe_allow_html=True)
