@@ -302,7 +302,7 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
 # =======================================================
-# 5. GENERADOR DE REPORTES PDF 📄 (V46)
+# 5. GENERADOR DE REPORTES PDF 📄 (V46 ACTUALIZADA)
 # =======================================================
 def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
     buffer = io.BytesIO()
@@ -345,6 +345,41 @@ def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
     ]))
     elements.append(t_resumen)
     elements.append(Spacer(1, 20))
+
+    # --- NUEVO: 2.5 DESGLOSE PRESUPUESTAL ---
+    elements.append(Paragraph("<b>Desglose Presupuestal (Gasto vs. Límite)</b>", styles['Heading2']))
+    elements.append(Spacer(1, 10))
+    
+    # Cálculos para la tabla de presupuestos
+    # Agrupamos los gastos reales por categoría
+    gastos_cat_dict = df_datos[df_datos['Tipo'] == 'Gasto'].groupby('Categoría')['Monto'].sum().to_dict()
+    
+    data_pres = [['Categoría', 'Presupuesto', 'Gasto Real', 'Diferencia']]
+    
+    # Iteramos sobre las categorías del presupuesto para mostrar el comparativo
+    for cat, budget in presupuestos_dict.items():
+        gasto_real = gastos_cat_dict.get(cat, 0.0)
+        # Solo mostramos filas si hay presupuesto asignado o gasto realizado para no llenar de ceros
+        if budget > 0 or gasto_real > 0:
+            diff = budget - gasto_real
+            data_pres.append([
+                cat, 
+                f"${budget:,.2f}", 
+                f"${gasto_real:,.2f}", 
+                f"${diff:,.2f}"
+            ])
+            
+    t_pres = Table(data_pres, colWidths=[160, 80, 80, 80])
+    t_pres.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#64748B')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (1, 0), (-1, -1), 'RIGHT'), # Alinear números a la derecha
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
+    ]))
+    elements.append(t_pres)
+    elements.append(Spacer(1, 20))
+    # --- FIN NUEVO SECCIÓN ---
 
     # 3. DETALLE
     elements.append(Paragraph("<b>Detalle de Movimientos</b>", styles['Heading2']))
