@@ -25,7 +25,7 @@ except ImportError:
     HAS_REPORTLAB = False
 
 # =======================================================
-# 1. CEREBRO BILINGÜE (TEXTOS) - V47 ANALYTICS
+# 1. CEREBRO BILINGÜE (TEXTOS) 🌍 - ACTUALIZADO V46
 # =======================================================
 TEXTOS = {
     "ES": {
@@ -39,13 +39,12 @@ TEXTOS = {
         "welcome": "Bienvenido",
         "sync_btn": "🔄 Sincronizar Datos",
         "filters": "🎯 Filtros de Datos",
-        "period": "📅 Periodo Base",
-        "comp_period": "🆚 Comparar contra (Opcional)",
+        "period": "📅 Periodo",
         "category": "🏷️ Categoría",
         "commerce": "🏪 Comercio",
         "logout": "Cerrar Sesión",
         "tab1": "📸 Digitalizar Ticket",
-        "tab2": "📈 Master Analytics",
+        "tab2": "📈 Dashboard BI",
         "tab3": "💬 AI Assistant",
         "upload_label": "📂 Toca para usar CÁMARA o GALERÍA",
         "manual_btn": "✍️ Captura Manual",
@@ -53,7 +52,7 @@ TEXTOS = {
         "analyze_btn": "⚡ PROCESAR TICKET",
         "save_btn": "💾 Guardar Transacción",
         "validation_title": "✅ Validar Información Extraída",
-        "highlights_title": "💡 Insights Financieros",
+        "highlights_title": "💡 Estado Financiero",
         "highlight_max": "💸 Compra más grande",
         "highlight_top": "🛍️ Categoría Top",
         "highlight_serv": "⚡ Servicios Básicos",
@@ -63,7 +62,7 @@ TEXTOS = {
         "trans_label": "Transacciones",
         "avg_label": "Ticket Promedio",
         "max_label": "Mayor Gasto",
-        "chart_budget_title": "📊 Control Presupuestal", 
+        "chart_budget_title": "📊 Control Presupuestal (Gasto vs Límite)", 
         "delete_title": "🗑️ Gestión de Registros",
         "delete_caption": "Selecciona un registro para eliminarlo permanentemente.",
         "delete_select": "Seleccionar Registro a Eliminar",
@@ -77,16 +76,12 @@ TEXTOS = {
         "download_pdf": "📄 Descargar PDF Ejecutivo",
         "download_csv": "📊 Descargar Excel (CSV)",
         "report_error": "⚠️ Instala 'reportlab' para generar PDFs.",
-        "type_label": "Tipo de Movimiento",
-        "income": "Ingreso",
-        "expense": "Gasto",
-        "balance_label": "Flujo Neto (Saldo)",
-        "forecast_title": "🔮 Pronóstico de Flujo (AI Forecast)",
-        "waterfall_title": "🌊 Cascada de Flujo de Efectivo",
-        "chart_pie_title": "🍩 Distribución de Gastos (Top Categorías)",
-        "chart_trend_title": "📉 Tendencia de Gasto (Día a Día)",
-        "chart_cat_compare": "📊 Comparativa por Categoría",
-        "metric_vs": "vs periodo anterior"
+        "type_label": "Tipo de Movimiento", # NUEVO
+        "income": "Ingreso", # NUEVO
+        "expense": "Gasto", # NUEVO
+        "balance_label": "Flujo Neto (Saldo)", # NUEVO
+        "forecast_title": "🔮 Pronóstico de Flujo (AI Forecast)", # NUEVO
+        "waterfall_title": "🌊 Cascada de Flujo de Efectivo" # NUEVO
     },
     "EN": {
         "login_title": "Secure Access",
@@ -99,13 +94,12 @@ TEXTOS = {
         "welcome": "Welcome",
         "sync_btn": "🔄 Sync Data",
         "filters": "🎯 Data Filters",
-        "period": "📅 Base Period",
-        "comp_period": "🆚 Compare with (Optional)",
+        "period": "📅 Period",
         "category": "🏷️ Category",
         "commerce": "🏪 Merchant",
         "logout": "Logout",
         "tab1": "📸 Digitize Receipt",
-        "tab2": "📈 Master Analytics",
+        "tab2": "📈 BI Dashboard",
         "tab3": "💬 AI Assistant",
         "upload_label": "📂 Tap to use CAMERA or GALLERY",
         "manual_btn": "✍️ Manual Entry",
@@ -123,7 +117,7 @@ TEXTOS = {
         "trans_label": "Transactions",
         "avg_label": "Avg Ticket",
         "max_label": "Top Expense",
-        "chart_budget_title": "📊 Budget Control", 
+        "chart_budget_title": "📊 Budget Control (Spend vs Limit)", 
         "delete_title": "🗑️ Record Management",
         "delete_caption": "Select a record to delete permanently.",
         "delete_select": "Select Expense to Delete",
@@ -142,11 +136,7 @@ TEXTOS = {
         "expense": "Expense",
         "balance_label": "Net Cash Flow",
         "forecast_title": "🔮 Cash Flow Forecast (AI)",
-        "waterfall_title": "🌊 Cash Flow Waterfall",
-        "chart_pie_title": "🍩 Expense Distribution",
-        "chart_trend_title": "📉 Spending Trend (Day by Day)",
-        "chart_cat_compare": "📊 Category Comparison",
-        "metric_vs": "vs previous period"
+        "waterfall_title": "🌊 Cash Flow Waterfall"
     }
 }
 
@@ -157,7 +147,7 @@ CATEGORIAS = {
         "Telefonía", "Ropa y Calzado", "Electrónica", "Entretenimiento", 
         "Educación", "Mascotas", "Regalos", "Viajes", "Suscripciones",
         "Cuidado Personal", "Deportes", "Oficina", "Mantenimiento Auto", 
-        "Impuestos y Predial", "Varios", "Nómina/Salario", "Ventas", "Otros Ingresos"
+        "Impuestos y Predial", "Varios", "Nómina/Salario", "Ventas", "Otros Ingresos" # Agregados para Ingresos
     ],
     "EN": [
         "Groceries & Supermarket", "Restaurants & Bars", "Gas & Transport",
@@ -172,7 +162,7 @@ CATEGORIAS = {
 # =======================================================
 # 2. CONFIGURACIÓN Y ESTILOS UI 🎨
 # =======================================================
-st.set_page_config(page_title="Nexus Analytics", layout="wide", page_icon="🔷")
+st.set_page_config(page_title="Nexus Data Studios", layout="wide", page_icon="🔷")
 
 st.markdown("""
     <style>
@@ -236,7 +226,8 @@ def login():
         t = TEXTOS[st.session_state.language]
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("<h1 style='text-align: center; color: #0F172A; font-size: 2.5rem;'>Nexus Analytics</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center; color: #0F172A; font-size: 2.5rem;'>SmartReceipt Enterprise</h1>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: #64748B;'>by 🔷 Nexus Data Studios</h5>", unsafe_allow_html=True)
         
         with st.container(border=True):
             st.markdown(f"### {t['login_title']}")
@@ -295,7 +286,9 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
     hoja = get_google_sheet()
     if hoja:
         try:
+            # ACTUALIZADO: Comprobación simple para V46
             if hoja.acell('A1').value != "Usuario":
+                # Si está vacía, creamos los headers V46
                 hoja.insert_row(["Usuario", "Tipo", "Fecha", "Hora", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"], 1)
             raw = hoja.get_all_records()
             df_full = pd.DataFrame(raw)
@@ -309,7 +302,7 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
 # =======================================================
-# 5. GENERADOR DE REPORTES PDF 📄
+# 5. GENERADOR DE REPORTES PDF 📄 (V46)
 # =======================================================
 def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
     buffer = io.BytesIO()
@@ -328,7 +321,7 @@ def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
     elements.append(Paragraph(f"<b>Periodo:</b> {periodo_texto}", normal_style))
     elements.append(Paragraph(f"<b>Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", normal_style))
     
-    # Cálculos
+    # Cálculos V46
     ingresos = df_datos[df_datos['Tipo'] == 'Ingreso']['Monto'].sum()
     gastos = df_datos[df_datos['Tipo'] == 'Gasto']['Monto'].sum()
     balance = ingresos - gastos
@@ -348,7 +341,7 @@ def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('GRID', (0,0), (-1,-1), 1, colors.white),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#CBD5E1')), # Fila Saldo
     ]))
     elements.append(t_resumen)
     elements.append(Spacer(1, 20))
@@ -406,6 +399,7 @@ def analizar_ticket(imagen_pil, idioma_actual):
         cats_str = ", ".join(CATS_ACTUALES)
         instrucciones_idioma = "Output values in ENGLISH." if idioma_actual == "EN" else "Valores de texto en ESPAÑOL."
 
+        # V46: Prompt optimizado para asumir Gasto
         prompt = f"""
         Actúa como experto OCR. {instrucciones_idioma}
         LISTA DE CATEGORÍAS: [{cats_str}]
@@ -442,22 +436,22 @@ def safe_float(val):
     except: return 0.0
 
 # =======================================================
-# 7. DASHBOARD & UI (V47 MASTER ANALYTICS)
+# 7. DASHBOARD & UI
 # =======================================================
 df_local = pd.DataFrame(st.session_state['gastos'])
-df_base = pd.DataFrame()
-df_comp = pd.DataFrame() # DataFrame de comparación
+df_filtrado = pd.DataFrame()
 
 if not df_local.empty:
     for c in ['lat','lon','Monto']:
         if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
-    df_local['Dia'] = df_local['Fecha_dt'].dt.day # Para tendencias
     
-    if 'Tipo' not in df_local.columns: df_local['Tipo'] = 'Gasto'
+    # V46: Manejo seguro de columna Tipo si no existe
+    if 'Tipo' not in df_local.columns:
+        df_local['Tipo'] = 'Gasto' # Default para retrocompatibilidad
 
-# --- SIDEBAR: FILTROS AVANZADOS V47 ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; margin-bottom: 20px;">
@@ -471,36 +465,40 @@ with st.sidebar:
         st.rerun()
 
     st.markdown("---")
-    st.subheader(T['filters'])
-    
-    if not df_local.empty:
-        # 1. Selector Periodo Base (Principal)
-        opts_mes = sorted([x for x in df_local['Mes_Año'].unique() if str(x) != 'nan'], reverse=True)
-        mes_base = st.selectbox(T['period'], opts_mes, index=0)
-        
-        # 2. Selector Periodo Comparación (Opcional)
-        opts_comp = ["Ninguno"] + [m for m in opts_mes if m != mes_base]
-        mes_comp = st.selectbox(T['comp_period'], opts_comp, index=0)
-        
-        # Filtrado de DataFrames
-        df_base = df_local[df_local['Mes_Año'] == mes_base].copy()
-        
-        if mes_comp != "Ninguno":
-            df_comp = df_local[df_local['Mes_Año'] == mes_comp].copy()
-            st.info(f"📅 Comparando: **{mes_base}** vs **{mes_comp}**")
-        else:
-            st.caption("Selecciona otro mes para ver comparativas.")
+    with st.expander(T['budget_set']):
+        presupuesto_total_calc = 0.0
+        for cat in CATS_ACTUALES:
+            val_prev = st.session_state.presupuestos.get(cat, 0.0)
+            nuevo_val = st.number_input(f"{cat}", min_value=0.0, value=val_prev, step=100.0)
+            st.session_state.presupuestos[cat] = nuevo_val
+            presupuesto_total_calc += nuevo_val
+    st.session_state.budget = presupuesto_total_calc
 
+    st.markdown(f"### {T['filters']}")
+    sel_mes = []
+    if not df_local.empty:
+        opts_mes = sorted([x for x in df_local['Mes_Año'].unique() if str(x) != 'nan'], reverse=True)
+        sel_mes = st.multiselect(T['period'], opts_mes)
+        opts_cat = sorted([str(x) for x in df_local['Categoría'].unique() if x])
+        sel_cat = st.multiselect(T['category'], opts_cat)
+        
+        df_filtrado = df_local.copy()
+        if sel_mes: df_filtrado = df_filtrado[df_filtrado['Mes_Año'].isin(sel_mes)]
+        if sel_cat: df_filtrado = df_filtrado[df_filtrado['Categoría'].isin(sel_cat)]
+    
     st.markdown("---")
-    # Botón de Reporte (Descarga lo que ves en el Dashboard)
     st.markdown(f"### {T['report_title']}")
-    if not df_base.empty:
+    if not df_filtrado.empty:
         if HAS_REPORTLAB:
-            periodo_str = mes_base if mes_comp == "Ninguno" else f"{mes_base} vs {mes_comp}"
-            pdf_data = generar_reporte_pdf(df_base, st.session_state.username, periodo_str, st.session_state.presupuestos)
+            periodo_str = ", ".join(sel_mes) if sel_mes else "Global"
+            pdf_data = generar_reporte_pdf(df_filtrado, st.session_state.username, periodo_str, st.session_state.presupuestos)
             st.download_button(label=T['download_pdf'], data=pdf_data, file_name="Reporte_Nexus.pdf", mime="application/pdf")
-        csv_data = df_base.to_csv(index=False).encode('utf-8')
+        else:
+            st.warning(T['report_error'])
+        csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
         st.download_button(label=T['download_csv'], data=csv_data, file_name="Gastos_Nexus.csv", mime="text/csv")
+    else:
+        st.caption("Filtra datos para generar reportes.")
 
     st.markdown("---")
     if st.button(T['logout'], use_container_width=True):
@@ -508,144 +506,11 @@ with st.sidebar:
         st.rerun()
 
 # --- BRANDING ---
-st.markdown(f'<h1 class="main-header">Nexus Analytics <span style="font-size:1.5rem; color:#64748B">V47</span></h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">SmartReceipt Enterprise</h1>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', unsafe_allow_html=True)
 
 # TABS
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
-
-# =======================================================
-# TAB 2: MASTER ANALYTICS (EL CEREBRO VISUAL)
-# =======================================================
-with tab_dashboard:
-    if df_base.empty:
-        st.info("No hay datos para el periodo seleccionado.")
-    else:
-        # --- 1. TARJETAS DE KPIs CON DELTAS ---
-        # Calculamos totales Base
-        ingreso_base = df_base[df_base['Tipo']=='Ingreso']['Monto'].sum()
-        gasto_base = df_base[df_base['Tipo']=='Gasto']['Monto'].sum()
-        neto_base = ingreso_base - gasto_base
-        
-        # Calculamos totales Comparación (si existe)
-        delta_ingreso = None
-        delta_gasto = None
-        delta_neto = None
-        
-        if not df_comp.empty:
-            ingreso_comp = df_comp[df_comp['Tipo']=='Ingreso']['Monto'].sum()
-            gasto_comp = df_comp[df_comp['Tipo']=='Gasto']['Monto'].sum()
-            neto_comp = ingreso_comp - gasto_comp
-            
-            # Cálculo de porcentajes
-            if ingreso_comp > 0: delta_ingreso = f"{((ingreso_base - ingreso_comp)/ingreso_comp)*100:.1f}%"
-            if gasto_comp > 0: delta_gasto = f"{((gasto_base - gasto_comp)/gasto_comp)*100:.1f}%"
-            delta_neto = f"${neto_base - neto_comp:,.0f}" # Diferencia monetaria para el neto
-        
-        # Renderizamos Métricas Nativas de Streamlit (Se ven muy pro)
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric(label=T['income'], value=f"${ingreso_base:,.0f}", delta=delta_ingreso)
-        k2.metric(label=T['total_label'], value=f"${gasto_base:,.0f}", delta=delta_gasto, delta_color="inverse") # Rojo si sube el gasto
-        k3.metric(label=T['balance_label'], value=f"${neto_base:,.0f}", delta=delta_neto)
-        
-        # Burn Rate simple
-        dias_trans = df_base['Dia'].max()
-        burn = gasto_base / dias_trans if dias_trans > 0 else 0
-        k4.metric(label="Burn Rate (Diario)", value=f"${burn:,.0f}", help="Gasto promedio por día")
-        
-        st.markdown("---")
-
-        # --- 2. GRÁFICO DE DONA (GASTOS) ---
-        col_graf1, col_graf2 = st.columns([1, 2])
-        
-        with col_graf1:
-            st.subheader(T['chart_pie_title'])
-            # Filtramos solo gastos y agrupamos
-            df_pie = df_base[df_base['Tipo']=='Gasto'].groupby('Categoría')['Monto'].sum().reset_index()
-            
-            # Gráfico de Dona con Altair
-            base = alt.Chart(df_pie).encode(theta=alt.Theta("Monto", stack=True))
-            pie = base.mark_arc(innerRadius=80, outerRadius=120).encode(
-                color=alt.Color("Categoría", scale=alt.Scale(scheme='category20b'), legend=None), # Sin leyenda para limpieza
-                order=alt.Order("Monto", sort="descending"),
-                tooltip=["Categoría", alt.Tooltip("Monto", format="$,.2f")]
-            )
-            # Texto en el centro (Total Gastos)
-            text = base.mark_text(radius=0).encode(
-                text=alt.value(f"${gasto_base/1000:.1f}k"),
-                size=alt.value(20),
-                color=alt.value("#334155")
-            )
-            st.altair_chart(pie + text, use_container_width=True)
-            # Pequeña leyenda manual abajo para las Top 3
-            if not df_pie.empty:
-                top3 = df_pie.nlargest(3, 'Monto')
-                for i, r in top3.iterrows():
-                    st.caption(f"🔹 **{r['Categoría']}**: ${r['Monto']:,.0f}")
-
-        # --- 3. TENDENCIA COMPARATIVA (LÍNEAS) ---
-        with col_graf2:
-            st.subheader(T['chart_trend_title'])
-            
-            # Preparamos datos para la línea
-            df_line_base = df_base[df_base['Tipo']=='Gasto'].groupby('Dia')['Monto'].sum().reset_index()
-            df_line_base['Periodo'] = mes_base
-            
-            datos_trend = df_line_base
-            
-            if not df_comp.empty:
-                df_line_comp = df_comp[df_comp['Tipo']=='Gasto'].groupby('Dia')['Monto'].sum().reset_index()
-                df_line_comp['Periodo'] = mes_comp
-                datos_trend = pd.concat([df_line_base, df_line_comp])
-            
-            # Gráfico de Líneas Multiserie
-            chart_trend = alt.Chart(datos_trend).mark_line(point=True, interpolate='monotone').encode(
-                x=alt.X('Dia', title='Día del Mes'),
-                y=alt.Y('Monto', title='Gasto Diario ($)'),
-                color=alt.Color('Periodo', legend=alt.Legend(title="Mes", orient="top")),
-                tooltip=['Periodo', 'Dia', alt.Tooltip('Monto', format="$,.2f")]
-            ).properties(height=350)
-            
-            st.altair_chart(chart_trend, use_container_width=True)
-
-        st.markdown("---")
-
-        # --- 4. ANÁLISIS POR CATEGORÍA (COMPARATIVO) ---
-        if not df_comp.empty:
-            st.subheader(T['chart_cat_compare'])
-            # Preparamos datos conjuntos
-            cat_base = df_base[df_base['Tipo']=='Gasto'].groupby('Categoría')['Monto'].sum().reset_index()
-            cat_base['Periodo'] = mes_base
-            
-            cat_comp = df_comp[df_comp['Tipo']=='Gasto'].groupby('Categoría')['Monto'].sum().reset_index()
-            cat_comp['Periodo'] = mes_comp
-            
-            cat_total = pd.concat([cat_base, cat_comp])
-            
-            chart_bar = alt.Chart(cat_total).mark_bar().encode(
-                x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)),
-                y='Monto',
-                color='Periodo',
-                xOffset='Periodo', # Barras agrupadas lado a lado
-                tooltip=['Categoría', 'Periodo', alt.Tooltip('Monto', format="$,.2f")]
-            ).properties(height=400)
-            st.altair_chart(chart_bar, use_container_width=True)
-        else:
-             # Si no hay comparación, mostramos el Waterfall original
-             st.subheader(T['waterfall_title'])
-             try:
-                data_waterfall = [{"Concepto": "Ingresos", "Monto": ingreso_base, "Color": "Ingreso"}]
-                gastos_cat = df_base[df_base['Tipo'] == 'Gasto'].groupby('Categoría')['Monto'].sum().reset_index()
-                for i, row in gastos_cat.iterrows():
-                    data_waterfall.append({"Concepto": row['Categoría'], "Monto": -row['Monto'], "Color": "Gasto"})
-                data_waterfall.append({"Concepto": "Saldo Final", "Monto": neto_base, "Color": "Total"})
-                df_wf = pd.DataFrame(data_waterfall)
-                wf_chart = alt.Chart(df_wf).mark_bar().encode(
-                    x=alt.X('Concepto', sort=None), y='Monto',
-                    color=alt.Color('Color', scale={'domain': ['Ingreso', 'Gasto', 'Total'], 'range': ['#10B981', '#EF4444', '#3B82F6']}),
-                    tooltip=['Concepto', 'Monto']
-                ).properties(height=400)
-                st.altair_chart(wf_chart, use_container_width=True)
-             except: pass
 
 # =======================================================
 # TAB 1: DIGITALIZACIÓN (CON SOPORTE DE TIPO)
@@ -744,6 +609,108 @@ with tab_nuevo:
                     st.rerun()
 
 # =======================================================
+# TAB 2: DASHBOARD (CIENCIA DE DATOS V46)
+# =======================================================
+with tab_dashboard:
+    if not df_filtrado.empty:
+        # 1. KPIs NETOS
+        ingresos_tot = df_filtrado[df_filtrado['Tipo'] == 'Ingreso']['Monto'].sum()
+        gastos_tot = df_filtrado[df_filtrado['Tipo'] == 'Gasto']['Monto'].sum()
+        saldo_neto = ingresos_tot - gastos_tot
+        
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["income"]}</div><div class="metric-value" style="color:#10B981">${ingresos_tot:,.0f}</div></div>', unsafe_allow_html=True)
+        with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["expense"]}</div><div class="metric-value" style="color:#EF4444">${gastos_tot:,.0f}</div></div>', unsafe_allow_html=True)
+        with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["balance_label"]}</div><div class="metric-value" style="color:#3B82F6">${saldo_neto:,.0f}</div></div>', unsafe_allow_html=True)
+        with m4:
+             # Burn Rate simplificado
+             dias = (df_filtrado['Fecha_dt'].max() - df_filtrado['Fecha_dt'].min()).days + 1
+             if dias > 0: burn_rate = gastos_tot / dias
+             else: burn_rate = 0
+             st.markdown(f'<div class="metric-card"><div class="metric-label">Burn Rate (Diario)</div><div class="metric-value" style="color:#F59E0B">${burn_rate:,.0f}</div></div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # 2. PRONÓSTICO (DATA SCIENCE)
+        if saldo_neto > 0 and burn_rate > 0:
+            dias_restantes = saldo_neto / burn_rate
+            fecha_fin = datetime.now() + timedelta(days=dias_restantes)
+            st.info(f"🔮 **Nexus AI Forecast:** A tu velocidad de gasto actual, tu saldo positivo duraría hasta el **{fecha_fin.strftime('%d/%m/%Y')}**.")
+        elif saldo_neto < 0:
+            st.warning("⚠️ **Alerta de Flujo:** Estás operando en números rojos. Se recomienda reducir gastos no esenciales.")
+        
+        st.markdown("---")
+        
+        # 3. GRÁFICO DE CASCADA (WATERFALL)
+        st.markdown(f"##### {T['waterfall_title']}")
+        try:
+            # Preparamos datos para cascada
+            # 1. Total Ingresos
+            data_waterfall = [{"Concepto": "Ingresos", "Monto": ingresos_tot, "Color": "Ingreso"}]
+            # 2. Gastos por categoría (Negativos)
+            gastos_cat = df_filtrado[df_filtrado['Tipo'] == 'Gasto'].groupby('Categoría')['Monto'].sum().reset_index()
+            for i, row in gastos_cat.iterrows():
+                data_waterfall.append({"Concepto": row['Categoría'], "Monto": -row['Monto'], "Color": "Gasto"})
+            # 3. Saldo Final
+            data_waterfall.append({"Concepto": "Saldo Final", "Monto": saldo_neto, "Color": "Total"})
+            
+            df_wf = pd.DataFrame(data_waterfall)
+            
+            # Gráfico simple de barras representando el flujo
+            wf_chart = alt.Chart(df_wf).mark_bar().encode(
+                x=alt.X('Concepto', sort=None),
+                y='Monto',
+                color=alt.Color('Color', scale={'domain': ['Ingreso', 'Gasto', 'Total'], 'range': ['#10B981', '#EF4444', '#3B82F6']}),
+                tooltip=['Concepto', 'Monto']
+            ).properties(height=400)
+            
+            st.altair_chart(wf_chart, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Error generating waterfall: {e}")
+
+        st.markdown("---")
+
+        # 4. GRÁFICO DE PRESUPUESTO (Solo Gastos)
+        st.markdown(f"##### {T['chart_budget_title']}")
+        df_solo_gastos = df_filtrado[df_filtrado['Tipo'] == 'Gasto']
+        try:
+            gastos_por_cat = df_solo_gastos.groupby('Categoría')['Monto'].sum().reset_index()
+            gastos_por_cat.columns = ['Categoría', 'Gasto Real']
+            df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
+            df_final = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
+
+            base = alt.Chart(df_final).encode(x=alt.X('Categoría', axis=alt.Axis(labelAngle=-45)))
+            bar_presupuesto = base.mark_bar(color='#E2E8F0').encode(y='Presupuesto', tooltip=['Categoría', 'Presupuesto'])
+            bar_gasto = base.mark_bar(color='#3B82F6', opacity=0.9).encode(y='Gasto Real', tooltip=['Categoría', 'Gasto Real'])
+            
+            chart_layer = (bar_presupuesto + bar_gasto).properties(height=350)
+            st.altair_chart(chart_layer, use_container_width=True)
+        except Exception as e:
+            st.warning("⚠️ Datos insuficientes para gráfico presupuestal.")
+
+        # 5. GESTIÓN DE REGISTROS
+        st.markdown(f"### {T['delete_title']}")
+        opciones_borrar = {f"{i} | {r['Tipo']} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
+        c_del1, c_del2 = st.columns([3,1])
+        with c_del1: 
+            sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()), key="sel_del")
+        with c_del2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button(T['delete_btn'], type="primary", key="btn_delete"):
+                idx_real = opciones_borrar[sel_del]
+                hoja = get_google_sheet()
+                if hoja:
+                    try: 
+                        hoja.delete_rows(idx_real + 2)
+                        del st.session_state['gastos'][idx_real]
+                        st.toast(T['delete_success'], icon="🗑️")
+                        st.rerun()
+                    except: st.error("Error DB")
+
+        with st.expander("📂 Data"): st.dataframe(df_filtrado, use_container_width=True)
+    else: st.info("No data / Sin datos.")
+
+# =======================================================
 # TAB 3: CHAT
 # =======================================================
 with tab_chat:
@@ -752,10 +719,10 @@ with tab_chat:
     if q := st.chat_input(T['chat_placeholder'], key="chat_input"):
         with st.chat_message("user"): st.markdown(q)
         st.session_state['chat_history'].append({"role":"user", "content":q})
-        if df_base.empty: r = "No data."
+        if df_filtrado.empty: r = "No data."
         else:
              with st.spinner("AI Thinking..."):
-                 r = consultar_chat_financiero(q, df_base, st.session_state.language)
+                 r = consultar_chat_financiero(q, df_filtrado, st.session_state.language)
              with st.chat_message("assistant"): st.markdown(r)
              st.session_state['chat_history'].append({"role":"assistant", "content":r})
 
