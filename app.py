@@ -494,6 +494,12 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
+    # === BOTÓN DE SINCRONIZACIÓN RESTAURADO ===
+    if st.button(T['sync_btn'], use_container_width=True):
+        st.session_state['gastos'] = [] # Limpiamos la memoria local
+        st.rerun() # Forzamos la recarga desde la nube (Google Sheet)
+    # ==========================================
+
     lang_side = st.selectbox("🌐 Language", ["Español", "English"], index=0 if st.session_state.language=="ES" else 1)
     if (lang_side == "Español" and st.session_state.language != "ES") or (lang_side == "English" and st.session_state.language != "EN"):
         st.session_state.language = "ES" if lang_side == "Español" else "EN"
