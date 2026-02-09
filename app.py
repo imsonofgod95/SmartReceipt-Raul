@@ -10,7 +10,7 @@ import os
 import altair as alt
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 
 # --- LIBRERÍA PARA PDF (IMPORTACIÓN SEGURA) ---
@@ -25,7 +25,7 @@ except ImportError:
     HAS_REPORTLAB = False
 
 # =======================================================
-# 1. CEREBRO BILINGÜE (TEXTOS) 🌍
+# 1. CEREBRO BILINGÜE (TEXTOS) 🌍 - ACTUALIZADO V46
 # =======================================================
 TEXTOS = {
     "ES": {
@@ -65,7 +65,7 @@ TEXTOS = {
         "chart_budget_title": "📊 Control Presupuestal (Gasto vs Límite)", 
         "delete_title": "🗑️ Gestión de Registros",
         "delete_caption": "Selecciona un registro para eliminarlo permanentemente.",
-        "delete_select": "Seleccionar Gasto a Eliminar",
+        "delete_select": "Seleccionar Registro a Eliminar",
         "delete_btn": "Eliminar Registro",
         "delete_success": "Registro eliminado de la Nube",
         "chat_placeholder": "Ej: ¿En qué gasté más este mes?",
@@ -75,7 +75,13 @@ TEXTOS = {
         "report_title": "📑 Centro de Reportes",
         "download_pdf": "📄 Descargar PDF Ejecutivo",
         "download_csv": "📊 Descargar Excel (CSV)",
-        "report_error": "⚠️ Instala 'reportlab' para generar PDFs."
+        "report_error": "⚠️ Instala 'reportlab' para generar PDFs.",
+        "type_label": "Tipo de Movimiento", # NUEVO
+        "income": "Ingreso", # NUEVO
+        "expense": "Gasto", # NUEVO
+        "balance_label": "Flujo Neto (Saldo)", # NUEVO
+        "forecast_title": "🔮 Pronóstico de Flujo (AI Forecast)", # NUEVO
+        "waterfall_title": "🌊 Cascada de Flujo de Efectivo" # NUEVO
     },
     "EN": {
         "login_title": "Secure Access",
@@ -124,7 +130,13 @@ TEXTOS = {
         "report_title": "📑 Report Center",
         "download_pdf": "📄 Download Executive PDF",
         "download_csv": "📊 Download Excel (CSV)",
-        "report_error": "⚠️ Install 'reportlab' to generate PDFs."
+        "report_error": "⚠️ Install 'reportlab' to generate PDFs.",
+        "type_label": "Transaction Type",
+        "income": "Income",
+        "expense": "Expense",
+        "balance_label": "Net Cash Flow",
+        "forecast_title": "🔮 Cash Flow Forecast (AI)",
+        "waterfall_title": "🌊 Cash Flow Waterfall"
     }
 }
 
@@ -135,7 +147,7 @@ CATEGORIAS = {
         "Telefonía", "Ropa y Calzado", "Electrónica", "Entretenimiento", 
         "Educación", "Mascotas", "Regalos", "Viajes", "Suscripciones",
         "Cuidado Personal", "Deportes", "Oficina", "Mantenimiento Auto", 
-        "Impuestos y Predial", "Varios"
+        "Impuestos y Predial", "Varios", "Nómina/Salario", "Ventas", "Otros Ingresos" # Agregados para Ingresos
     ],
     "EN": [
         "Groceries & Supermarket", "Restaurants & Bars", "Gas & Transport",
@@ -143,7 +155,7 @@ CATEGORIAS = {
         "Phone & Internet", "Clothing", "Electronics", "Entertainment", 
         "Education", "Pets", "Gifts", "Travel", "Subscriptions",
         "Personal Care", "Sports", "Office", "Car Maintenance", 
-        "Taxes", "Misc"
+        "Taxes", "Misc", "Salary", "Sales", "Other Income"
     ]
 }
 
@@ -274,8 +286,10 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
     hoja = get_google_sheet()
     if hoja:
         try:
+            # ACTUALIZADO: Comprobación simple para V46
             if hoja.acell('A1').value != "Usuario":
-                hoja.insert_row(["Usuario", "Fecha", "Hora", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"], 1)
+                # Si está vacía, creamos los headers V46
+                hoja.insert_row(["Usuario", "Tipo", "Fecha", "Hora", "Comercio", "Monto", "Ubicación", "lat", "lon", "Categoría", "Detalles"], 1)
             raw = hoja.get_all_records()
             df_full = pd.DataFrame(raw)
             if not df_full.empty and "Usuario" in df_full.columns:
@@ -288,7 +302,7 @@ if 'gastos' not in st.session_state or not st.session_state['gastos']:
 if 'chat_history' not in st.session_state: st.session_state['chat_history'] = []
 
 # =======================================================
-# 5. GENERADOR DE REPORTES PDF 📄 (ACTUALIZADO)
+# 5. GENERADOR DE REPORTES PDF 📄 (V46)
 # =======================================================
 def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
     buffer = io.BytesIO()
@@ -299,76 +313,50 @@ def generar_reporte_pdf(df_datos, usuario, periodo_texto, presupuestos_dict):
     # 1. ENCABEZADO
     title_style = styles['Title']
     title_style.textColor = colors.HexColor('#0F172A')
-    elements.append(Paragraph("Nexus Data Studios - Informe de Gastos", title_style))
+    elements.append(Paragraph("Nexus Data Studios - Informe Financiero", title_style))
     elements.append(Spacer(1, 12))
     
     normal_style = styles['Normal']
     elements.append(Paragraph(f"<b>Usuario:</b> {usuario}", normal_style))
-    elements.append(Paragraph(f"<b>Periodo del Reporte:</b> {periodo_texto}", normal_style)) # NUEVA LINEA DE PERIODO
-    elements.append(Paragraph(f"<b>Fecha de Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", normal_style))
-    elements.append(Paragraph(f"<b>Total del Periodo:</b> ${df_datos['Monto'].sum():,.2f}", normal_style))
+    elements.append(Paragraph(f"<b>Periodo:</b> {periodo_texto}", normal_style))
+    elements.append(Paragraph(f"<b>Emisión:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}", normal_style))
+    
+    # Cálculos V46
+    ingresos = df_datos[df_datos['Tipo'] == 'Ingreso']['Monto'].sum()
+    gastos = df_datos[df_datos['Tipo'] == 'Gasto']['Monto'].sum()
+    balance = ingresos - gastos
+    
+    elements.append(Paragraph(f"<b>Flujo Neto (Saldo):</b> ${balance:,.2f}", normal_style))
     elements.append(Spacer(1, 20))
     
-    # 2. RESUMEN FISCAL (CON PRESUPUESTOS Y BALANCE)
-    elements.append(Paragraph("<b>Resumen Presupuestal por Categoría</b>", styles['Heading2']))
-    elements.append(Spacer(1, 10))
+    # 2. TABLA BALANCE
+    data_resumen = [['Concepto', 'Monto']]
+    data_resumen.append(['Total Ingresos', f"${ingresos:,.2f}"])
+    data_resumen.append(['Total Gastos', f"-${gastos:,.2f}"])
+    data_resumen.append(['SALDO FINAL', f"${balance:,.2f}"])
     
-    # Agrupar datos
-    agrupado = df_datos.groupby('Categoría')['Monto'].sum().reset_index()
-    
-    # Preparar datos de la tabla (Encabezados + Filas)
-    # Columnas: Categoría | Gasto Real | Presupuesto | Estado (Balance)
-    data_resumen = [['Categoría', 'Gasto Real', 'Presupuesto', 'Balance']]
-    
-    for index, row in agrupado.iterrows():
-        cat = row['Categoría']
-        gasto = row['Monto']
-        # Obtener presupuesto (default 0 si no existe)
-        presupuesto = presupuestos_dict.get(cat, 0.0)
-        diferencia = presupuesto - gasto
-        
-        # Lógica de Balance
-        if presupuesto == 0:
-            status = "Sin Presupuesto"
-        elif diferencia >= 0:
-            status = f"✅ (+${diferencia:,.0f})" # A favor
-        else:
-            status = f"⚠️ Excedido (-${abs(diferencia):,.0f})" # En contra
-            
-        data_resumen.append([
-            cat, 
-            f"${gasto:,.2f}", 
-            f"${presupuesto:,.2f}", 
-            status
-        ])
-    
-    # Crear Tabla
-    t_resumen = Table(data_resumen, colWidths=[200, 100, 100, 120])
+    t_resumen = Table(data_resumen, colWidths=[200, 150])
     t_resumen.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3B82F6')), # Azul encabezado
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3B82F6')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F1F5F9')), # Gris filas
-        ('GRID', (0,0), (-1,-1), 1, colors.white)
+        ('GRID', (0,0), (-1,-1), 1, colors.white),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#CBD5E1')), # Fila Saldo
     ]))
     elements.append(t_resumen)
     elements.append(Spacer(1, 20))
 
-    # 3. DETALLE DE TRANSACCIONES
-    elements.append(Paragraph("<b>Detalle de Transacciones</b>", styles['Heading2']))
+    # 3. DETALLE
+    elements.append(Paragraph("<b>Detalle de Movimientos</b>", styles['Heading2']))
     elements.append(Spacer(1, 10))
     
-    # Seleccionar solo columnas relevantes
-    df_detalle = df_datos[['Fecha', 'Comercio', 'Categoría', 'Monto']].copy()
-    data_detalle = [['Fecha', 'Comercio', 'Categoría', 'Monto']] + df_detalle.values.tolist()
+    df_detalle = df_datos[['Fecha', 'Tipo', 'Comercio', 'Categoría', 'Monto']].copy()
+    data_detalle = [['Fecha', 'Tipo', 'Comercio', 'Categoría', 'Monto']] + df_detalle.values.tolist()
     
-    t_detalle = Table(data_detalle, colWidths=[80, 150, 150, 80])
+    t_detalle = Table(data_detalle, colWidths=[60, 60, 120, 120, 70])
     t_detalle.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#64748B')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTSIZE', (0, 0), (-1, -1), 8),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey)
     ]))
@@ -411,17 +399,17 @@ def analizar_ticket(imagen_pil, idioma_actual):
         cats_str = ", ".join(CATS_ACTUALES)
         instrucciones_idioma = "Output values in ENGLISH." if idioma_actual == "EN" else "Valores de texto en ESPAÑOL."
 
+        # V46: Prompt optimizado para asumir Gasto
         prompt = f"""
         Actúa como experto OCR. {instrucciones_idioma}
         LISTA DE CATEGORÍAS: [{cats_str}]
         
         INSTRUCCIONES:
         1. Extrae: Comercio, Fecha (DD/MM/AAAA), Total, Hora.
-        2. DIRECCIÓN: Intenta extraer la dirección si es legible.
-        3. LAT/LON: Déjalos en 0.0, ya no son necesarios visualizar.
+        2. TIPO: Asume siempre que es "Gasto" (Expense) a menos que diga explícitamente "Depósito" o "Nómina".
         
         JSON OBLIGATORIO: 
-        {{"comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección", "latitud": 0.0, "longitud": 0.0, "categoria": "Texto", "detalles": "Texto"}}
+        {{"tipo": "Gasto", "comercio": "Nombre", "total": 0.00, "fecha": "DD/MM/AAAA", "hora": "HH:MM", "ubicacion": "Dirección", "latitud": 0.0, "longitud": 0.0, "categoria": "Texto", "detalles": "Texto"}}
         """
         response = model.generate_content([prompt, imagen_pil])
         return response.text, modelo
@@ -436,7 +424,7 @@ def consultar_chat_financiero(pregunta, datos_df, idioma_actual):
         model = genai.GenerativeModel(modelo)
         datos_csv = datos_df.to_csv(index=False)
         lang_prompt = "Answer in ENGLISH" if idioma_actual == "EN" else "Responde en ESPAÑOL"
-        prompt = f"Role: Financial Assistant. {lang_prompt}. Data: \n---\n{datos_csv}\n---\nQuery: {pregunta}"
+        prompt = f"Role: Financial Data Scientist. {lang_prompt}. Data: \n---\n{datos_csv}\n---\nQuery: {pregunta}"
         response = model.generate_content(prompt)
         return response.text
     except Exception as e: return f"Error Chat: {e}"
@@ -458,8 +446,12 @@ if not df_local.empty:
         if c in df_local.columns: df_local[c] = pd.to_numeric(df_local[c], errors='coerce').fillna(0.0)
     df_local['Fecha_dt'] = pd.to_datetime(df_local['Fecha'], dayfirst=True, errors='coerce')
     df_local['Mes_Año'] = df_local['Fecha_dt'].dt.strftime('%Y-%m')
+    
+    # V46: Manejo seguro de columna Tipo si no existe
+    if 'Tipo' not in df_local.columns:
+        df_local['Tipo'] = 'Gasto' # Default para retrocompatibilidad
 
-# --- SIDEBAR (CONFIG, FILTROS Y REPORTES) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.markdown(f"""
     <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 10px; text-align: center; margin-bottom: 20px;">
@@ -483,7 +475,7 @@ with st.sidebar:
     st.session_state.budget = presupuesto_total_calc
 
     st.markdown(f"### {T['filters']}")
-    sel_mes = [] # Inicializar
+    sel_mes = []
     if not df_local.empty:
         opts_mes = sorted([x for x in df_local['Mes_Año'].unique() if str(x) != 'nan'], reverse=True)
         sel_mes = st.multiselect(T['period'], opts_mes)
@@ -494,25 +486,15 @@ with st.sidebar:
         if sel_mes: df_filtrado = df_filtrado[df_filtrado['Mes_Año'].isin(sel_mes)]
         if sel_cat: df_filtrado = df_filtrado[df_filtrado['Categoría'].isin(sel_cat)]
     
-    # --- NUEVA SECCIÓN DE REPORTES EN SIDEBAR ---
     st.markdown("---")
     st.markdown(f"### {T['report_title']}")
     if not df_filtrado.empty:
-        # BOTÓN 1: PDF EJECUTIVO
         if HAS_REPORTLAB:
-            # DETERMINAR TEXTO DEL PERIODO
-            if sel_mes:
-                periodo_str = ", ".join(sel_mes)
-            else:
-                periodo_str = "Periodo Global (Todos los tiempos)"
-            
-            # PASAR DATOS Y PRESUPUESTOS AL PDF
+            periodo_str = ", ".join(sel_mes) if sel_mes else "Global"
             pdf_data = generar_reporte_pdf(df_filtrado, st.session_state.username, periodo_str, st.session_state.presupuestos)
             st.download_button(label=T['download_pdf'], data=pdf_data, file_name="Reporte_Nexus.pdf", mime="application/pdf")
         else:
             st.warning(T['report_error'])
-        
-        # BOTÓN 2: EXCEL / CSV
         csv_data = df_filtrado.to_csv(index=False).encode('utf-8')
         st.download_button(label=T['download_csv'], data=csv_data, file_name="Gastos_Nexus.csv", mime="text/csv")
     else:
@@ -527,30 +509,25 @@ with st.sidebar:
 st.markdown('<h1 class="main-header">SmartReceipt Enterprise</h1>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">by 🔷 <b>Nexus Data Studios</b></div>', unsafe_allow_html=True)
 
-# TABS PRINCIPALES
+# TABS
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
 # =======================================================
-# TAB 1: DIGITALIZACIÓN
+# TAB 1: DIGITALIZACIÓN (CON SOPORTE DE TIPO)
 # =======================================================
 with tab_nuevo:
     if 'temp_data' not in st.session_state:
-        # FASE 1: SUBIR Y ANALIZAR
         col1, col2 = st.columns([1, 1], gap="large")
-        
         with col1:
             st.markdown("#### 1. Input Source")
-            
-            # --- EL CARGADOR QUE GUARDA EN LA BÓVEDA ---
             uploaded_file = st.file_uploader(T['upload_label'], type=["jpg","png","jpeg","webp"], key="final_uploader")
-            
-            # SI HAY ARCHIVO NUEVO, GUARDAR BYTES INMEDIATAMENTE EN LA BÓVEDA
             if uploaded_file is not None:
                 st.session_state.ticket_bytes = uploaded_file.getvalue()
             
             st.markdown("---")
             if st.button(T['manual_btn'], use_container_width=True):
                  st.session_state['temp_data'] = {
+                    "tipo": "Gasto", # Default
                     "comercio": "", "total": 0.0, "fecha": datetime.now().strftime("%d/%m/%Y"),
                     "hora": datetime.now().strftime("%H:%M"), "categoria": CATS_ACTUALES[0],
                     "ubicacion": "", "detalles": "Manual", "latitud": 0.0, "longitud": 0.0
@@ -559,7 +536,6 @@ with tab_nuevo:
 
         with col2:
             st.markdown("#### 2. Preview & Action")
-            # --- VERIFICAMOS LA BÓVEDA, NO EL CARGADOR ---
             if st.session_state.ticket_bytes is not None:
                 try:
                     image_stream = io.BytesIO(st.session_state.ticket_bytes)
@@ -587,43 +563,43 @@ with tab_nuevo:
                 st.info(T['upload_label'])
 
     else:
-        # FASE 2: VALIDACIÓN
         st.markdown(f"### {T['validation_title']}")
         data = st.session_state['temp_data']
         
         with st.container(border=True):
-            c1,c2 = st.columns(2)
-            vc = c1.text_input(T['commerce'], data.get("comercio",""), key="val_com")
+            # V46: Selector de Tipo
+            col_t1, col_t2 = st.columns([1,3])
+            tipo_idx = 0 if data.get("tipo","Gasto") == "Gasto" else 1
+            vt = col_t1.selectbox(T['type_label'], ["Gasto", "Ingreso"], index=tipo_idx, key="val_tipo")
+            
+            vc = col_t2.text_input(T['commerce'], data.get("comercio",""), key="val_com")
+
+            c1,c2,c3 = st.columns(3)
             try: val_monto = safe_float(str(data.get("total",0)).replace("$","").replace(",",""))
             except: val_monto = 0.0
-            vm = c2.number_input("Total ($)", value=val_monto, key="val_tot")
-
-            c3,c4,c5 = st.columns(3)
-            vf = c3.text_input("Date (DD/MM/YYYY)", data.get("fecha",""), key="val_date")
-            vh = c4.text_input("Time", data.get("hora", "00:00"), key="val_time")
+            vm = c1.number_input("Total ($)", value=val_monto, key="val_tot")
+            vf = c2.text_input("Date (DD/MM/YYYY)", data.get("fecha",""), key="val_date")
+            vh = c3.text_input("Time", data.get("hora", "00:00"), key="val_time")
             
             cat_def = data.get("categoria","Misc")
             idx = 0
-            if cat_def in CATS_ACTUALES:
-                idx = CATS_ACTUALES.index(cat_def)
+            if cat_def in CATS_ACTUALES: idx = CATS_ACTUALES.index(cat_def)
             else: idx = len(CATS_ACTUALES) - 1
-            
-            vcat = c5.selectbox(T['category'], CATS_ACTUALES, index=idx, key="val_cat")
+            vcat = st.selectbox(T['category'], CATS_ACTUALES, index=idx, key="val_cat")
             
             with st.expander("📝 Details", expanded=True):
                 vu = st.text_input("Location", data.get("ubicacion",""), key="val_loc")
                 vdet = st.text_input("Details", data.get("detalles",""), key="val_det")
-                vlat = 0.0 
-                vlon = 0.0
 
             col_btn1, col_btn2 = st.columns([1,1])
             with col_btn1:
-                if st.button("❌ Cancelar / Volver", use_container_width=True):
+                if st.button("❌ Cancelar", use_container_width=True):
                     del st.session_state['temp_data']
                     st.rerun()
             with col_btn2:
                 if st.button(T['save_btn'], type="primary", use_container_width=True):
-                    nuevo = {"Usuario": st.session_state.username, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": vlat, "lon": vlon, "Categoría": vcat, "Detalles": vdet}
+                    # V46: Estructura actualizada con Tipo en indice 1
+                    nuevo = {"Usuario": st.session_state.username, "Tipo": vt, "Fecha": vf, "Hora": vh, "Comercio": vc, "Monto": vm, "Ubicación": vu, "lat": 0.0, "lon": 0.0, "Categoría": vcat, "Detalles": vdet}
                     st.session_state['gastos'].append(nuevo)
                     hoja = get_google_sheet()
                     if hoja:
@@ -633,43 +609,72 @@ with tab_nuevo:
                     st.rerun()
 
 # =======================================================
-# TAB 2: DASHBOARD
+# TAB 2: DASHBOARD (CIENCIA DE DATOS V46)
 # =======================================================
 with tab_dashboard:
     if not df_filtrado.empty:
-        # MÉTRICAS GENERALES
+        # 1. KPIs NETOS
+        ingresos_tot = df_filtrado[df_filtrado['Tipo'] == 'Ingreso']['Monto'].sum()
+        gastos_tot = df_filtrado[df_filtrado['Tipo'] == 'Gasto']['Monto'].sum()
+        saldo_neto = ingresos_tot - gastos_tot
+        
         m1, m2, m3, m4 = st.columns(4)
-        with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["total_label"]}</div><div class="metric-value" style="color:#0F172A">${df_filtrado["Monto"].sum():,.0f}</div></div>', unsafe_allow_html=True)
-        with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["trans_label"]}</div><div class="metric-value" style="color:#3B82F6">{len(df_filtrado)}</div></div>', unsafe_allow_html=True)
-        with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["avg_label"]}</div><div class="metric-value" style="color:#F59E0B">${df_filtrado["Monto"].mean():,.0f}</div></div>', unsafe_allow_html=True)
+        with m1: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["income"]}</div><div class="metric-value" style="color:#10B981">${ingresos_tot:,.0f}</div></div>', unsafe_allow_html=True)
+        with m2: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["expense"]}</div><div class="metric-value" style="color:#EF4444">${gastos_tot:,.0f}</div></div>', unsafe_allow_html=True)
+        with m3: st.markdown(f'<div class="metric-card"><div class="metric-label">{T["balance_label"]}</div><div class="metric-value" style="color:#3B82F6">${saldo_neto:,.0f}</div></div>', unsafe_allow_html=True)
         with m4:
-            top_cat = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax() if not df_filtrado.empty else "-"
-            st.markdown(f'<div class="metric-card"><div class="metric-label">{T["max_label"]}</div><div class="metric-value" style="color:#EF4444; font-size:1.5rem">{top_cat}</div></div>', unsafe_allow_html=True)
+             # Burn Rate simplificado
+             dias = (df_filtrado['Fecha_dt'].max() - df_filtrado['Fecha_dt'].min()).days + 1
+             if dias > 0: burn_rate = gastos_tot / dias
+             else: burn_rate = 0
+             st.markdown(f'<div class="metric-card"><div class="metric-label">Burn Rate (Diario)</div><div class="metric-value" style="color:#F59E0B">${burn_rate:,.0f}</div></div>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # HIGHLIGHTS
-        st.markdown(f"### {T['highlights_title']}")
-        hc1, hc2, hc3 = st.columns(3)
+        # 2. PRONÓSTICO (DATA SCIENCE)
+        if saldo_neto > 0 and burn_rate > 0:
+            dias_restantes = saldo_neto / burn_rate
+            fecha_fin = datetime.now() + timedelta(days=dias_restantes)
+            st.info(f"🔮 **Nexus AI Forecast:** A tu velocidad de gasto actual, tu saldo positivo duraría hasta el **{fecha_fin.strftime('%d/%m/%Y')}**.")
+        elif saldo_neto < 0:
+            st.warning("⚠️ **Alerta de Flujo:** Estás operando en números rojos. Se recomienda reducir gastos no esenciales.")
         
-        idx_max = df_filtrado['Monto'].idxmax()
-        row_max = df_filtrado.loc[idx_max]
-        with hc1: st.info(f"{T['highlight_max']}:\n\n${row_max['Monto']:,.2f} - **{row_max['Comercio']}**")
-        
-        cat_top = df_filtrado.groupby('Categoría')['Monto'].sum().idxmax()
-        monto_cat = df_filtrado.groupby('Categoría')['Monto'].sum().max()
-        with hc2: st.success(f"{T['highlight_top']}:\n\n**{cat_top}** (${monto_cat:,.2f}).")
-        
-        mask_serv = df_filtrado['Categoría'].str.contains("Servicios|Utilities|Telefonía|Phone", case=False, na=False)
-        gastos_serv = df_filtrado[mask_serv]
-        total_serv = gastos_serv['Monto'].sum() if not gastos_serv.empty else 0.0
-        with hc3: st.warning(f"{T['highlight_serv']}:\n\nTotal: **${total_serv:,.2f}**")
-
         st.markdown("---")
         
-        # --- GRÁFICO LAYERED ---
-        st.markdown(f"##### {T['chart_budget_title']}")
+        # 3. GRÁFICO DE CASCADA (WATERFALL)
+        st.markdown(f"##### {T['waterfall_title']}")
         try:
-            gastos_por_cat = df_filtrado.groupby('Categoría')['Monto'].sum().reset_index()
+            # Preparamos datos para cascada
+            # 1. Total Ingresos
+            data_waterfall = [{"Concepto": "Ingresos", "Monto": ingresos_tot, "Color": "Ingreso"}]
+            # 2. Gastos por categoría (Negativos)
+            gastos_cat = df_filtrado[df_filtrado['Tipo'] == 'Gasto'].groupby('Categoría')['Monto'].sum().reset_index()
+            for i, row in gastos_cat.iterrows():
+                data_waterfall.append({"Concepto": row['Categoría'], "Monto": -row['Monto'], "Color": "Gasto"})
+            # 3. Saldo Final
+            data_waterfall.append({"Concepto": "Saldo Final", "Monto": saldo_neto, "Color": "Total"})
+            
+            df_wf = pd.DataFrame(data_waterfall)
+            
+            # Gráfico simple de barras representando el flujo
+            wf_chart = alt.Chart(df_wf).mark_bar().encode(
+                x=alt.X('Concepto', sort=None),
+                y='Monto',
+                color=alt.Color('Color', scale={'domain': ['Ingreso', 'Gasto', 'Total'], 'range': ['#10B981', '#EF4444', '#3B82F6']}),
+                tooltip=['Concepto', 'Monto']
+            ).properties(height=400)
+            
+            st.altair_chart(wf_chart, use_container_width=True)
+            
+        except Exception as e:
+            st.error(f"Error generating waterfall: {e}")
+
+        st.markdown("---")
+
+        # 4. GRÁFICO DE PRESUPUESTO (Solo Gastos)
+        st.markdown(f"##### {T['chart_budget_title']}")
+        df_solo_gastos = df_filtrado[df_filtrado['Tipo'] == 'Gasto']
+        try:
+            gastos_por_cat = df_solo_gastos.groupby('Categoría')['Monto'].sum().reset_index()
             gastos_por_cat.columns = ['Categoría', 'Gasto Real']
             df_presupuestos = pd.DataFrame(list(st.session_state.presupuestos.items()), columns=['Categoría', 'Presupuesto'])
             df_final = pd.merge(df_presupuestos, gastos_por_cat, on='Categoría', how='left').fillna(0)
@@ -680,26 +685,12 @@ with tab_dashboard:
             
             chart_layer = (bar_presupuesto + bar_gasto).properties(height=350)
             st.altair_chart(chart_layer, use_container_width=True)
-            st.caption("ℹ️ Barra Gris = Presupuesto | Barra Azul = Gasto Real")
         except Exception as e:
             st.warning("⚠️ Datos insuficientes para gráfico presupuestal.")
 
-        # Gráficos Secundarios
-        col_g1, col_g2 = st.columns(2)
-        with col_g1:
-            base = alt.Chart(df_filtrado).encode(theta=alt.Theta("Monto", stack=True))
-            pie = base.mark_arc(innerRadius=60).encode(
-                color=alt.Color("Categoría", scale={'scheme': 'tableau10'}), tooltip=["Categoría", "Monto"]
-            )
-            st.altair_chart(pie, use_container_width=True)
-        with col_g2:
-            if 'Fecha_dt' in df_filtrado.columns:
-                line = alt.Chart(df_filtrado).mark_line(point=True).encode(x='Fecha_dt', y='Monto', tooltip=['Fecha', 'Monto'])
-                st.altair_chart(line, use_container_width=True)
-
+        # 5. GESTIÓN DE REGISTROS
         st.markdown(f"### {T['delete_title']}")
-        st.caption(T['delete_caption'])
-        opciones_borrar = {f"{i} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
+        opciones_borrar = {f"{i} | {r['Tipo']} | {r['Fecha']} - {r['Comercio']} (${r['Monto']})": i for i, r in df_filtrado.iterrows()}
         c_del1, c_del2 = st.columns([3,1])
         with c_del1: 
             sel_del = st.selectbox(T['delete_select'], list(opciones_borrar.keys()), key="sel_del")
@@ -709,7 +700,7 @@ with tab_dashboard:
                 idx_real = opciones_borrar[sel_del]
                 hoja = get_google_sheet()
                 if hoja:
-                    try:
+                    try: 
                         hoja.delete_rows(idx_real + 2)
                         del st.session_state['gastos'][idx_real]
                         st.toast(T['delete_success'], icon="🗑️")
