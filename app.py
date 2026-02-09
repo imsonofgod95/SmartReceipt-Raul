@@ -40,12 +40,12 @@ TEXTOS = {
         "sync_btn": "🔄 Sincronizar Datos",
         "filters": "🎯 Filtros de Datos",
         "period": "📅 Periodo Base",
-        "comp_period": "🆚 Comparar contra (Opcional)", # NUEVO
+        "comp_period": "🆚 Comparar contra (Opcional)",
         "category": "🏷️ Categoría",
         "commerce": "🏪 Comercio",
         "logout": "Cerrar Sesión",
         "tab1": "📸 Digitalizar Ticket",
-        "tab2": "📈 Master Analytics", # RENOMBRADO
+        "tab2": "📈 Master Analytics",
         "tab3": "💬 AI Assistant",
         "upload_label": "📂 Toca para usar CÁMARA o GALERÍA",
         "manual_btn": "✍️ Captura Manual",
@@ -83,10 +83,10 @@ TEXTOS = {
         "balance_label": "Flujo Neto (Saldo)",
         "forecast_title": "🔮 Pronóstico de Flujo (AI Forecast)",
         "waterfall_title": "🌊 Cascada de Flujo de Efectivo",
-        "chart_pie_title": "🍩 Distribución de Gastos (Top Categorías)", # NUEVO
-        "chart_trend_title": "📉 Tendencia de Gasto (Día a Día)", # NUEVO
-        "chart_cat_compare": "📊 Comparativa por Categoría", # NUEVO
-        "metric_vs": "vs periodo anterior" # NUEVO
+        "chart_pie_title": "🍩 Distribución de Gastos (Top Categorías)",
+        "chart_trend_title": "📉 Tendencia de Gasto (Día a Día)",
+        "chart_cat_compare": "📊 Comparativa por Categoría",
+        "metric_vs": "vs periodo anterior"
     },
     "EN": {
         "login_title": "Secure Access",
@@ -514,10 +514,7 @@ st.markdown(f'<h1 class="main-header">Nexus Analytics <span style="font-size:1.5
 tab_nuevo, tab_dashboard, tab_chat = st.tabs([T['tab1'], T['tab2'], T['tab3']])
 
 # =======================================================
-# TAB 2: MASTER ANALYTICS (EL CEREBRO VISUAL) 
-
-[Image of dashboard interface]
-
+# TAB 2: MASTER ANALYTICS (EL CEREBRO VISUAL)
 # =======================================================
 with tab_dashboard:
     if df_base.empty:
@@ -557,7 +554,7 @@ with tab_dashboard:
         
         st.markdown("---")
 
-        # --- 2. GRÁFICO DE DONA (GASTOS)  ---
+        # --- 2. GRÁFICO DE DONA (GASTOS) ---
         col_graf1, col_graf2 = st.columns([1, 2])
         
         with col_graf1:
@@ -585,7 +582,7 @@ with tab_dashboard:
                 for i, r in top3.iterrows():
                     st.caption(f"🔹 **{r['Categoría']}**: ${r['Monto']:,.0f}")
 
-        # --- 3. TENDENCIA COMPARATIVA (LÍNEAS)  ---
+        # --- 3. TENDENCIA COMPARATIVA (LÍNEAS) ---
         with col_graf2:
             st.subheader(T['chart_trend_title'])
             
@@ -612,7 +609,7 @@ with tab_dashboard:
 
         st.markdown("---")
 
-        # --- 4. ANÁLISIS POR CATEGORÍA (COMPARATIVO)  ---
+        # --- 4. ANÁLISIS POR CATEGORÍA (COMPARATIVO) ---
         if not df_comp.empty:
             st.subheader(T['chart_cat_compare'])
             # Preparamos datos conjuntos
